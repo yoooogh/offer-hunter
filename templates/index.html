@@ -184,6 +184,72 @@ textarea::placeholder{color:#c4c4c4}
   font-size:10px;padding:2px 8px;border-radius:10px;
   background:rgba(99,102,241,.1);color:var(--accent);font-weight:500;
 }
+
+/* ===== 简历上传区 ===== */
+.upload-zone{
+  border:2px dashed #d9d9d9;border-radius:var(--radius);padding:18px 20px;
+  text-align:center;cursor:pointer;transition:all .2s;margin-bottom:8px;
+  background:rgba(99,102,241,.02);
+}
+.upload-zone:hover,.upload-zone.dragover{
+  border-color:var(--accent);background:rgba(99,102,241,.06);
+}
+.upload-icon{font-size:26px;margin-bottom:2px}
+.upload-text{font-size:12px;color:var(--muted);line-height:1.6}
+.upload-text span{font-size:10px;color:#bbb}
+
+/* ===== JD 按钮呼吸动画 ===== */
+@keyframes breathe{
+  0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.4)}
+  50%{box-shadow:0 0 0 10px rgba(99,102,241,0)}
+}
+.btn-hint{
+  animation:breathe 2s ease-in-out infinite;
+  background:linear-gradient(135deg,var(--accent),var(--accent2))!important;
+  color:#fff!important;border:none!important;
+}
+.btn-hint-text{font-size:10px;opacity:.8;margin-left:2px}
+
+/* ===== 智能助手 ===== */
+.assistant-btn{
+  position:fixed;bottom:24px;right:24px;width:48px;height:48px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;border-radius:50%;cursor:pointer;box-shadow:0 4px 16px rgba(99,102,241,.35);
+  display:flex;align-items:center;justify-content:center;font-size:22px;
+  z-index:9999;transition:transform .2s;
+}
+.assistant-btn:hover{transform:scale(1.1)}
+.assistant-panel{
+  position:fixed;bottom:80px;right:24px;width:340px;height:420px;
+  background:var(--card);border-radius:var(--radius);
+  box-shadow:0 8px 40px rgba(0,0,0,.15);z-index:9999;
+  display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--border);
+}
+.assistant-header{
+  padding:12px 16px;font-weight:600;font-size:13px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;display:flex;justify-content:space-between;align-items:center;
+}
+.assistant-header button{background:none;border:none;color:#fff;cursor:pointer;font-size:16px}
+.assistant-messages{
+  flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;
+  font-size:12px;line-height:1.6;
+}
+.assistant-msg{padding:8px 12px;border-radius:10px;max-width:88%;word-break:break-word}
+.assistant-msg.user{align-self:flex-end;background:rgba(99,102,241,.1);color:var(--text)}
+.assistant-msg.bot{align-self:flex-start;background:#f3f4f6;color:var(--text)}
+.assistant-input{
+  display:flex;padding:10px;border-top:1px solid var(--border);gap:6px;
+}
+.assistant-input input{
+  flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:20px;
+  font-size:12px;outline:none;
+}
+.assistant-input input:focus{border-color:var(--accent)}
+.assistant-input button{
+  padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:20px;
+  cursor:pointer;font-size:12px;font-weight:500;
+}
 </style>
 </head>
 <body>
@@ -224,6 +290,11 @@ textarea::placeholder{color:#c4c4c4}
   <div class="panel active" id="panel-batch">
     <div class="card">
       <div class="card-title">我的简历</div>
+      <div class="upload-zone" id="resume-upload" onclick="document.getElementById('resume-file').click()">
+        <div class="upload-icon">📎</div>
+        <div class="upload-text">拖拽简历文件到这里，或点击上传<br><span>支持 .pdf / .docx / .txt</span></div>
+        <input type="file" id="resume-file" accept=".pdf,.docx,.txt" hidden onchange="handleResumeFile(this.files[0])">
+      </div>
       <textarea id="resume-text" placeholder="在这里粘贴你的简历全文...&#10;&#10;例如：&#10;张三 | 手机号 | 邮箱&#10;暨南大学 金融学 硕士&#10;美的集团 COE实习生..."></textarea>
       <button class="btn btn-primary" onclick="parseResume()" style="margin-top:10px">🤖 AI 解析简历</button>
       <span class="status" id="resume-status"></span>
@@ -233,7 +304,7 @@ textarea::placeholder{color:#c4c4c4}
       <div class="card-title">目标岗位 JD <span class="badge-sm" style="margin-left:4px">支持批量粘贴</span></div>
       <textarea id="jd-text" placeholder="粘贴一份岗位 JD..." style="min-height:80px"></textarea>
       <div class="row" style="margin-top:10px">
-        <button class="btn btn-ghost" onclick="addJD()">+ 添加 JD</button>
+        <button class="btn btn-ghost" id="btn-add-jd" onclick="addJD()">+ 添加 JD <span class="btn-hint-text" id="btn-hint-text"></span></button>
         <span class="status" id="jd-count">已添加 0 个岗位</span>
         <button class="btn btn-danger" onclick="clearJDs()" style="margin-left:auto">清空全部</button>
       </div>
@@ -536,6 +607,118 @@ async function startStrategy() {
 }
 
 function esc(s) { let d = document.createElement("div"); d.textContent = s||""; return d.innerHTML; }
+
+// ===== 简历文件上传 =====
+function handleResumeFile(file) {
+  if (!file) return;
+  let zone = document.getElementById("resume-upload");
+  zone.querySelector(".upload-text").innerHTML = "解析中...";
+  let form = new FormData();
+  form.append("file", file);
+  fetch("/api/resume/upload", {method:"POST", body:form})
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        document.getElementById("resume-text").value = d.text;
+        zone.querySelector(".upload-text").innerHTML = "✅ " + file.name + " 已识别<br><span>点击编辑或直接解析</span>";
+      } else {
+        zone.querySelector(".upload-text").innerHTML = "❌ " + d.error + "<br><span>请尝试粘贴文本</span>";
+      }
+    })
+    .catch(e => {
+      zone.querySelector(".upload-text").innerHTML = "❌ 上传失败<br><span>请尝试粘贴文本</span>";
+    });
+}
+
+// 拖拽支持
+let uploadZone = document.getElementById("resume-upload");
+if (uploadZone) {
+  uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("dragover"); });
+  uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("dragover"));
+  uploadZone.addEventListener("drop", e => {
+    e.preventDefault();
+    uploadZone.classList.remove("dragover");
+    let file = e.dataTransfer.files[0];
+    if (file) handleResumeFile(file);
+  });
+}
+
+// ===== JD 按钮呼吸动画 + Ctrl+Enter =====
+let jdTextarea = document.getElementById("jd-text");
+let btnAddJd = document.getElementById("btn-add-jd");
+if (jdTextarea && btnAddJd) {
+  jdTextarea.addEventListener("input", () => {
+    if (jdTextarea.value.trim().length > 10) {
+      btnAddJd.classList.add("btn-hint");
+      document.getElementById("btn-hint-text").textContent = "👈 点这里添加";
+    } else {
+      btnAddJd.classList.remove("btn-hint");
+      document.getElementById("btn-hint-text").textContent = "";
+    }
+  });
+  // Ctrl+Enter 快捷键
+  jdTextarea.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      addJD();
+    }
+  });
+}
+
+// ===== 智能助手 =====
+let assistantHistory = [];
+
+function toggleAssistant() {
+  let panel = document.getElementById("assistant-panel");
+  panel.style.display = panel.style.display === "none" ? "flex" : "none";
+  if (panel.style.display === "flex") {
+    document.getElementById("assistant-input").focus();
+  }
+}
+
+async function sendAssistant() {
+  let input = document.getElementById("assistant-input");
+  let question = input.value.trim();
+  if (!question) return;
+
+  let msgs = document.getElementById("assistant-msgs");
+  msgs.innerHTML += '<div class="assistant-msg user">' + esc(question) + '</div>';
+  input.value = "";
+  msgs.innerHTML += '<div class="assistant-msg bot"><span class="spinner"></span>思考中...</div>';
+  msgs.scrollTop = msgs.scrollHeight;
+
+  // 删除 spinner
+  let lastMsg = msgs.lastElementChild;
+
+  try {
+    let r = await fetch("/api/assistant", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ question, history: assistantHistory })
+    });
+    let d = await r.json();
+    lastMsg.innerHTML = d.ok ? esc(d.answer) : ("❌ " + esc(d.error));
+    if (d.ok) {
+      assistantHistory.push({role:"user",content:question});
+      assistantHistory.push({role:"assistant",content:d.answer});
+    }
+  } catch(e) {
+    lastMsg.innerHTML = "❌ 网络错误，请稍后重试";
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
 </script>
+<!-- 智能助手 -->
+<div class="assistant-btn" id="assistant-btn" onclick="toggleAssistant()">💬</div>
+<div class="assistant-panel" id="assistant-panel" style="display:none">
+  <div class="assistant-header">🤖 使用助手 <button onclick="toggleAssistant()">✕</button></div>
+  <div class="assistant-messages" id="assistant-msgs">
+    <div class="assistant-msg bot">你好！我是 Offer 捕手的使用助手 👋<br>有使用问题随时问我～</div>
+  </div>
+  <div class="assistant-input">
+    <input type="text" id="assistant-input" placeholder="输入问题..." onkeydown="if(event.key==='Enter')sendAssistant()">
+    <button onclick="sendAssistant()">发送</button>
+  </div>
+</div>
 </body>
 </html>

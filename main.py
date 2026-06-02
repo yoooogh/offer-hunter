@@ -24,6 +24,92 @@ def parse_resume():
     state["resume_text"] = text
     return jsonify({"ok": True, "resume": state["resume"]})
 
+# ===== 简历文件上传 =====
+@app.route("/api/resume/upload", methods=["POST"])
+def upload_resume():
+    if "file" not in request.files:
+        return jsonify({"error": "未选择文件"}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "文件名为空"}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    text = ""
+
+    try:
+        if ext == ".txt":
+            text = file.read().decode("utf-8", errors="ignore")
+        elif ext == ".docx":
+            from docx import Document
+            import io
+            doc = Document(io.BytesIO(file.read()))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        elif ext == ".pdf":
+            import pdfplumber, io
+            with pdfplumber.open(io.BytesIO(file.read())) as pdf:
+                for page in pdf.pages:
+                    t = page.extract_text()
+                    if t:
+                        text += t + "\n"
+        else:
+            return jsonify({"error": f"不支持的文件格式: {ext}，请上传 .pdf/.docx/.txt"}), 400
+
+        if not text.strip():
+            return jsonify({"error": "无法从文件中提取文字，请确认文件不是扫描版图片"}), 400
+
+        return jsonify({"ok": True, "text": text.strip(), "filename": file.filename})
+    except Exception as e:
+        return jsonify({"error": f"文件解析失败: {str(e)}"}), 500
+
+
+# ===== 智能助手 =====
+@app.route("/api/assistant", methods=["POST"])
+def assistant():
+    data = request.json or {}
+    question = data.get("question", "").strip()
+    history = data.get("history", [])
+
+    if not question:
+        return jsonify({"error": "问题为空"}), 400
+
+    system_prompt = """你是"Offer 捕手"的智能客服助手。Offer 捕手是一个 AI 驱动的学生求职匹配工具。
+
+功能介绍：
+1. 批量匹配：上传简历 + 添加 JD → AI 多维度打分排序（经验40% + 学科25% + 技能15% + 公司10% + 适配10%），权重可调
+2. 深度诊断：针对单个心仪岗位，逐项对比简历（学历/专业/经验/技能）→ 输出 pass/warn/fail + 具体修改建议
+3. 简历优化（成长路线图）：AI 分析目标岗位的共性要求 → 给出短期/中期/长期提升建议
+4. 投递管理：记录投递进度 → 看板视图管理（待投/已投/面试/offer）
+5. 策略建议：AI 生成投递顺序 + 风险提示 + 周计划
+6. 浏览器插件：在 BOSS 直聘一键抓取 JD，支持单张和批量抓取
+
+使用流程：上传简历 → 添加 JD → 开始匹配 → 针对心仪岗位深度诊断 → 生成成长路线
+
+常见问题：
+- 如何添加 JD：在文本框粘贴岗位描述，点"+ 添加 JD"按钮，支持批量添加多条
+- 简历怎么上传：可以粘贴文本，也可以拖拽上传 .pdf/.docx/.txt 文件
+- 权重怎么调：在「权重设置」标签页拖滑块，不同行业可设置不同侧重
+- 插件怎么装：点页面顶部"下载浏览器插件"，解压后在 chrome://extensions 加载
+- 没解析出简历信息：确认简历包含教育背景、实习经历、技能等完整信息
+
+请用友好的语气回答用户问题，回答要简洁（控制在 150 字以内），引导用户正确使用产品。"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    for h in history[-6:]:  # 保留最近 6 条对话
+        messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+    messages.append({"role": "user", "content": question})
+
+    try:
+        result = engine.call(json.dumps(messages, ensure_ascii=False), 500)
+        # engine.call 返回的是原始文本，需要提取有用的部分
+        answer = result.strip()
+        # 如果返回太长，截断
+        if len(answer) > 300:
+            answer = answer[:300] + "..."
+        return jsonify({"ok": True, "answer": answer})
+    except Exception as e:
+        return jsonify({"error": f"AI 助手暂不可用: {str(e)}"}), 500
+
+
 # ===== JD =====
 @app.route("/api/jd/add", methods=["POST"])
 def add_jd():

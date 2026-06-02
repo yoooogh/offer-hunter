@@ -211,14 +211,24 @@ textarea::placeholder{color:#c4c4c4}
 .btn-hint-text{font-size:10px;opacity:.8;margin-left:2px}
 
 /* ===== 智能助手 ===== */
-.assistant-btn{
-  position:fixed;bottom:24px;right:24px;width:48px;height:48px;
-  background:linear-gradient(135deg,var(--accent),var(--accent2));
-  color:#fff;border-radius:50%;cursor:pointer;box-shadow:0 4px 16px rgba(99,102,241,.35);
-  display:flex;align-items:center;justify-content:center;font-size:22px;
-  z-index:9999;transition:transform .2s;
+@keyframes pulse{
+  0%,100%{box-shadow:0 4px 20px rgba(99,102,241,.4)}
+  50%{box-shadow:0 4px 36px rgba(99,102,241,.7),0 0 0 12px rgba(99,102,241,.1)}
 }
-.assistant-btn:hover{transform:scale(1.1)}
+.assistant-btn{
+  position:fixed;bottom:20px;right:20px;width:auto;height:auto;
+  padding:10px 18px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;border-radius:24px;cursor:pointer;
+  box-shadow:0 4px 20px rgba(99,102,241,.4);
+  display:flex;align-items:center;gap:8px;
+  font-size:14px;font-weight:600;
+  z-index:9999;transition:transform .2s;
+  animation:pulse 2.5s ease-in-out infinite;
+  border:none;
+}
+.assistant-btn:hover{transform:scale(1.08);animation:none}
+.assistant-btn .icon{font-size:20px}
 .assistant-panel{
   position:fixed;bottom:80px;right:24px;width:340px;height:420px;
   background:var(--card);border-radius:var(--radius);
@@ -534,16 +544,38 @@ async function startOptimize() {
 // ===== Weights =====
 let weights = {exp:40, hard:25, skill:15, company:10, fit:10};
 function renderWeights() {
-  let html = ""; let labels = {exp:"经验匹配",hard:"学科兼容",skill:"技能覆盖",company:"公司质量",fit:"综合适配"};
+  let sum = Object.values(weights).reduce((a,b)=>a+b,0);
+  let sumColor = Math.abs(sum-100) < 0.5 ? "var(--green)" : "var(--red)";
+  let html = '<div style="text-align:center;margin-bottom:14px;font-size:13px;font-weight:600">总分: <span id="weight-sum" style="font-size:18px;color:'+sumColor+'">'+sum+'</span> / 100 '+(Math.abs(sum-100)<0.5?'✅':'⚠️ 需要等于100')+'</div>';
+  let labels = {exp:"经验匹配",hard:"学科兼容",skill:"技能覆盖",company:"公司质量",fit:"综合适配"};
   for (let k in weights) {
     html += '<div class="slider-group"><div class="slider-label"><span>'+labels[k]+'</span><span>'+weights[k]+'%</span></div><input type="range" class="slider" min="0" max="100" value="'+weights[k]+'" data-key="'+k+'"></div>';
   }
   document.getElementById("weight-sliders").innerHTML = html;
   document.querySelectorAll(".slider").forEach(s => {
-    s.addEventListener("input", () => { let v = parseInt(s.value); s.closest(".slider-group").querySelector("span:last-child").textContent = v+"%"; weights[s.dataset.key] = v; });
+    s.addEventListener("input", () => {
+      let v = parseInt(s.value);
+      s.closest(".slider-group").querySelector("span:last-child").textContent = v+"%";
+      weights[s.dataset.key] = v;
+      // 实时更新总和
+      let newSum = Object.values(weights).reduce((a,b)=>a+b,0);
+      let el = document.getElementById("weight-sum");
+      if (el) {
+        el.textContent = newSum;
+        el.style.color = Math.abs(newSum-100) < 0.5 ? "var(--green)" : "var(--red)";
+      }
+    });
   });
 }
-async function saveWeights() { await fetch("/api/weight", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(weights)}); alert("已保存"); }
+async function saveWeights() {
+  let sum = Object.values(weights).reduce((a,b)=>a+b,0);
+  if (Math.abs(sum - 100) > 0.5) {
+    alert("权重总和为 " + sum + "，必须等于 100 才能保存");
+    return;
+  }
+  await fetch("/api/weight", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(weights)});
+  alert("✅ 权重已保存");
+}
 renderWeights();
 
 // ===== Tracking =====
@@ -709,7 +741,7 @@ async function sendAssistant() {
 }
 </script>
 <!-- 智能助手 -->
-<div class="assistant-btn" id="assistant-btn" onclick="toggleAssistant()">💬</div>
+<div class="assistant-btn" id="assistant-btn" onclick="toggleAssistant()"><span class="icon">💬</span> 使用助手</div>
 <div class="assistant-panel" id="assistant-panel" style="display:none">
   <div class="assistant-header">🤖 使用助手 <button onclick="toggleAssistant()">✕</button></div>
   <div class="assistant-messages" id="assistant-msgs">

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Offer 捕手 - JD 抓取",
+  "version": "1.0",
+  "description": "一键将BOSS直聘岗位JD发送到Offer捕手进行匹配",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["*://*.zhipin.com/*", "*://*.liepin.com/*", "http://localhost:5000/*"],
+  "action": {
+    "default_title": "抓取JD",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["*://*.zhipin.com/*", "*://*.liepin.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}

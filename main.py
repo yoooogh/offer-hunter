@@ -85,18 +85,18 @@ def upload_resume():
     ext = os.path.splitext(file.filename)[1].lower()
     file_bytes = file.read()
     images_b64 = []
+    import base64
 
     try:
         if ext == ".pdf":
             import fitz  # PyMuPDF
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             for page in doc:
-                pix = page.get_pixmap(dpi=150)
-                images_b64.append(pix.tobytes("png"))
+                pix = page.get_pixmap(dpi=120)
+                images_b64.append(base64.b64encode(pix.tobytes("png")).decode())
             doc.close()
         elif ext in (".png", ".jpg", ".jpeg"):
-            import io as _io, base64
-            images_b64 = [file_bytes]
+            images_b64 = [base64.b64encode(file_bytes).decode()]
         else:
             # .txt / .docx: 先提取文字，再用 VL 清洗
             text = ""

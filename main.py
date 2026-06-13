@@ -24,6 +24,55 @@ def parse_resume():
     state["resume_text"] = text
     return jsonify({"ok": True, "resume": state["resume"]})
 
+# ===== 简历视觉清洗（网站粘贴乱码 → 图片 → VL 识别） =====
+@app.route("/api/resume/vision", methods=["POST"])
+def resume_vision():
+    data = request.json or {}
+    img_b64 = data.get("image", "")
+    if not img_b64:
+        return jsonify({"error": "图片数据为空"}), 400
+
+    if "," in img_b64:
+        img_b64 = img_b64.split(",", 1)[1]
+
+    api_key = os.environ.get("DASHSCOPE_KEY", "sk-c0ba0e1a0ae84aedb742322fe46148f3")
+    try:
+        resp = requests.post(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": "qwen-vl-plus",
+                "messages": [{"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+                    {"type": "text", "text": (
+                        "这是一份从网站粘贴出来的简历文本截图，其中混入了大量乱码字符（如随机字母数字串、"
+                        "单字符碎片、hash 值等水印）。请提取其中的真实简历内容，去掉所有乱码，"
+                        "保持原有的段落结构和换行。只返回清洗后的纯文本，不要加任何解释。"
+                    )},
+                ]}],
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return jsonify({"error": f"VL 返回 {resp.status_code}"}), 500
+
+        result = resp.json()
+        text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        text = text.strip()
+        # 去掉可能的 markdown 代码块包裹
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]
+            if text.endswith("```"): text = text[:-3]
+        text = text.strip()
+
+        if len(text) < 20:
+            return jsonify({"error": "VL 提取结果太短"}), 500
+
+        return jsonify({"ok": True, "text": text})
+    except Exception as e:
+        return jsonify({"error": f"VL 调用异常: {str(e)}"}), 500
+
+
 # ===== 简历文件上传 =====
 @app.route("/api/resume/upload", methods=["POST"])
 def upload_resume():

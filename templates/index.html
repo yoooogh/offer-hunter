@@ -306,7 +306,10 @@ textarea::placeholder{color:#c4c4c4}
         <input type="file" id="resume-file" accept=".pdf,.docx,.txt" hidden onchange="handleResumeFile(this.files[0])">
       </div>
       <textarea id="resume-text" placeholder="在这里粘贴你的简历全文...&#10;&#10;例如：&#10;张三 | 手机号 | 邮箱&#10;暨南大学 金融学 硕士&#10;美的集团 COE实习生..."></textarea>
-      <button class="btn btn-primary" onclick="parseResume()" style="margin-top:10px">🤖 AI 解析简历</button>
+      <div class="row" style="margin-top:10px">
+        <button class="btn btn-primary" onclick="parseResume()">🤖 AI 解析简历</button>
+        <button class="btn btn-ghost" onclick="visionCleanResume()" style="font-size:11px">📸 视觉清洗乱码</button>
+      </div>
       <span class="status" id="resume-status"></span>
     </div>
 
@@ -434,6 +437,45 @@ document.getElementById('resume-text').addEventListener('paste', function() {
     }
   }, 100);
 });
+
+// 文字转图片 → VL 视觉清洗乱码
+function textToImage(text) {
+  var lines = text.split('\n');
+  var canvas = document.createElement('canvas');
+  canvas.width = 750;
+  canvas.height = lines.length * 18 + 30;
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#222';
+  ctx.font = '13px "Microsoft YaHei", sans-serif';
+  lines.forEach(function(line, i) {
+    ctx.fillText(line, 15, 20 + i * 18);
+  });
+  return canvas.toDataURL('image/png');
+}
+
+async function visionCleanResume() {
+  var raw = document.getElementById('resume-text').value.trim();
+  if (!raw) { document.getElementById('resume-status').textContent = '请先粘贴简历'; return; }
+  document.getElementById('resume-status').innerHTML = '<span class="spinner"></span>视觉清洗中...';
+  try {
+    var img = textToImage(raw);
+    var r = await fetch('/api/resume/vision', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ image: img })
+    });
+    var d = await r.json();
+    if (d.ok) {
+      document.getElementById('resume-text').value = d.text;
+      document.getElementById('resume-status').textContent = '✅ 乱码已清洗，请检查后点 AI 解析';
+    } else {
+      document.getElementById('resume-status').textContent = '❌ ' + (d.error || '清洗失败');
+    }
+  } catch(e) {
+    document.getElementById('resume-status').textContent = '❌ 连接失败';
+  }
+}
 
 async function parseResume() {
   var textarea = document.getElementById('resume-text');

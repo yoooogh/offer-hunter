@@ -404,8 +404,42 @@ document.querySelectorAll(".tab").forEach(t => {
 let resumeData = null;
 
 // ===== Resume =====
+// 清洗从网页/PDF 粘贴产生的乱码（隐藏水印、CSS 残余、hash 串）
+function cleanPastedText(text) {
+  return text
+    .split('\n')
+    .filter(function(line) {
+      var t = line.trim();
+      if (!t) return true; // 保留空行
+      // 去掉过短且全是符号/数字/单字母的行（水印碎片）
+      if (t.length < 6 && /^[^\\u4e00-\\u9fff]{1,5}$/.test(t)) return false;
+      // 去掉长 hash/base64 串（无中文且超过30个连续无空格字符）
+      if (t.length > 30 && !/[\\u4e00-\\u9fff]/.test(t) && t.indexOf(' ') === -1) return false;
+      // 去掉纯数字/字母/符号的短行（不含任何中文）
+      if (t.length < 12 && !/[\\u4e00-\\u9fff]/.test(t) && /^[a-zA-Z0-9\\s\\.\\-_~]+$/.test(t)) return false;
+      return true;
+    })
+    .join('\\n')
+    .replace(/\\n{3,}/g, '\\n\\n')
+    .trim();
+}
+
+// 监听粘贴事件，自动清洗
+document.getElementById('resume-text').addEventListener('paste', function() {
+  var self = this;
+  setTimeout(function() {
+    var cleaned = cleanPastedText(self.value);
+    if (cleaned !== self.value) {
+      self.value = cleaned;
+    }
+  }, 100);
+});
+
 async function parseResume() {
-  let t = document.getElementById("resume-text").value.trim();
+  var textarea = document.getElementById('resume-text');
+  var cleaned = cleanPastedText(textarea.value);
+  if (cleaned !== textarea.value) { textarea.value = cleaned; }
+  var t = cleaned.trim();
   if (!t) return;
   document.getElementById("resume-status").innerHTML = '<span class="spinner"></span>解析中...';
   let r = await fetch("/api/resume/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});
@@ -416,9 +450,21 @@ async function parseResume() {
   } else document.getElementById("resume-status").textContent = "❌ " + d.error;
 }
 
+// JD 粘贴自动清洗
+document.getElementById('jd-text').addEventListener('paste', function() {
+  var self = this;
+  setTimeout(function() {
+    var cleaned = cleanPastedText(self.value);
+    if (cleaned !== self.value) { self.value = cleaned; }
+  }, 100);
+});
+
 // ===== JD =====
 async function addJD() {
-  let t = document.getElementById("jd-text").value.trim(); if (!t) return;
+  var jdArea = document.getElementById("jd-text");
+  var cleaned = cleanPastedText(jdArea.value);
+  if (cleaned !== jdArea.value) { jdArea.value = cleaned; }
+  let t = cleaned.trim(); if (!t) return;
   document.getElementById("jd-count").textContent = "解析中...";
   let r = await fetch("/api/jd/add", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});
   let d = await r.json();

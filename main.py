@@ -1,9 +1,11 @@
 """Offer 捕手 - Web 控制台"""
 from flask import Flask, render_template, request, jsonify, send_file
+from flask_cors import CORS
 from engine.matcher import MatchEngine
 import os, json, re, requests
 
 app = Flask(__name__)
+CORS(app)
 engine = MatchEngine(os.environ.get("DS_KEY", "sk-b857ad13b3da41bb8158199d0df10f64"))
 
 # 内存存储（Demo 用）

@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "一键将BOSS直聘岗位JD发送到Offer捕手进行匹配",
   "permissions": ["activeTab", "storage"],
-  "host_permissions": ["*://*.zhipin.com/*", "*://*.liepin.com/*", "http://localhost:5000/*"],
+  "host_permissions": ["*://*.zhipin.com/*", "*://*.liepin.com/*", "http://localhost:5000/*", "https://offer-hunter-production.up.railway.app/*"],
   "action": {
     "default_title": "抓取JD",
     "default_popup": "popup.html"

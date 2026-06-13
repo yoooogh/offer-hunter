@@ -5,6 +5,63 @@
 <title>Offer 捕手</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+function renderResumePreview(r) {
+  var c = document.getElementById('resume-upload').closest('.card');
+  var old = document.getElementById('resume-preview');
+  if (old) old.remove();
+
+  var html = '<div class="resume-preview" id="resume-preview">';
+  // Name + contact
+  html += '<div class="rp-name">' + esc(r.name||'') + '</div>';
+  html += '<div class="rp-contact">';
+  if (r.phone) html += '<span>📱 ' + esc(r.phone) + '</span>';
+  if (r.email) html += '<span>📧 ' + esc(r.email) + '</span>';
+  html += '</div>';
+
+  // Education
+  if (r.education && r.education.length > 0) {
+    html += '<div class="rp-section"><div class="rp-section"-title>🎓 教育背景</div>';
+    r.education.forEach(function(e) {
+      html += '<div class="rp-edu-item">';
+      html += '<div class="rp-item-header"><span class="rp-item-title">' + esc(e.school||'') + '</span><span class="rp-item-date">' + esc(e.start||'') + ' - ' + esc(e.end||'') + '</span></div>';
+      html += '<div class="rp-item-sub">' + esc(e.degree||'') + ' · ' + esc(e.major||'') + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Experience
+  if (r.experience && r.experience.length > 0) {
+    html += '<div class="rp-section"><div class="rp-section"-title>💼 实习/工作经历</div>';
+    r.experience.forEach(function(e) {
+      html += '<div class="rp-exp-item">';
+      html += '<div class="rp-item-header"><span class="rp-item-title">' + esc(e.title||'') + ' @ ' + esc(e.company||'') + '</span><span class="rp-item-date">' + esc(e.start||'') + ' - ' + esc(e.end||'') + '</span></div>';
+      if (e.description) html += '<div class="rp-item-desc">' + esc(e.description).slice(0,300) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Skills
+  if (r.skills && r.skills.length > 0) {
+    html += '<div class="rp-section"><div class="rp-section"-title>🛠 技能</div><div class="rp-tags">';
+    r.skills.forEach(function(s) { html += '<span class="rp-tag">' + esc(s).slice(0,50) + '</span>'; });
+    html += '</div></div>';
+  }
+
+  // Awards
+  if (r.awards && r.awards.length > 0) {
+    html += '<div class="rp-section"><div class="rp-section"-title>🏆 奖项/证书</div><div class="rp-tags">';
+    r.awards.forEach(function(a) { html += '<span class="rp-tag">' + esc(a).slice(0,60) + '</span>'; });
+    html += '</div></div>';
+  }
+
+  html += '</div>';
+  c.insertAdjacentHTML('afterend', html);
+}
+
+</script>
 <style>
 :root {
   --bg: #f8f9fb;
@@ -260,6 +317,33 @@ textarea::placeholder{color:#c4c4c4}
 .assistant-input button{
   padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:20px;
   cursor:pointer;font-size:12px;font-weight:500;
+}
+
+/* ===== 简历预览 ===== */
+.resume-preview{
+  background:#fff;border-radius:12px;padding:24px;
+  border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.04);
+  font-size:13px;line-height:1.8;color:#374151;
+}
+.resume-preview .rp-name{font-size:22px;font-weight:700;color:#1a1a2e}
+.resume-preview .rp-contact{font-size:12px;color:#6b7280;margin:4px 0 16px;display:flex;gap:16px;flex-wrap:wrap}
+.resume-preview .rp-section{margin-top:16px}
+.resume-preview .rp-section-title{
+  font-size:14px;font-weight:600;color:#1f2937;border-bottom:2px solid #6366f1;
+  padding-bottom:4px;margin-bottom:10px
+}
+.resume-preview .rp-edu-item,.resume-preview .rp-exp-item{
+  margin-bottom:12px;padding-left:12px;border-left:2px solid #e5e7eb
+}
+.resume-preview .rp-item-header{display:flex;justify-content:space-between;flex-wrap:wrap}
+.resume-preview .rp-item-title{font-weight:600;color:#1f2937}
+.resume-preview .rp-item-sub{font-size:12px;color:#6b7280}
+.resume-preview .rp-item-date{font-size:11px;color:#9ca3af}
+.resume-preview .rp-item-desc{font-size:12px;color:#4b5563;margin-top:4px;line-height:1.7}
+.resume-preview .rp-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.resume-preview .rp-tag{
+  font-size:11px;padding:2px 10px;border-radius:10px;
+  background:rgba(99,102,241,.08);color:#6366f1
 }
 </style>
 </head>
@@ -783,10 +867,11 @@ async function handleResumeFile(file) {
         let d = await r.json();
         if (d.ok && d.resume) {
           resumeData = d.resume;
-          let label = (d.resume.name||"??") + " · " + ((d.resume.education||[])[0]?.school||"??");
+          let r = d.resume;
+          let label = (r.name||"??") + " · " + ((r.education||[])[0]?.school||"??");
           zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
-          document.getElementById("resume-text").value = JSON.stringify(d.resume, null, 2);
-          document.getElementById("resume-status").textContent = "✅ " + label;
+          document.getElementById("resume-status").innerHTML = "";
+          renderResumePreview(r);
         } else {
           zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败");
         }
@@ -805,11 +890,11 @@ async function handleResumeFile(file) {
       .then(d => {
         if (d.ok && d.resume) {
           resumeData = d.resume;
-          let r = d.resume;
-          let label = (r.name||"??") + " · " + ((r.education||[])[0]?.school||"??");
-          zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
-          document.getElementById("resume-text").value = JSON.stringify(r, null, 2);
-          document.getElementById("resume-status").textContent = "✅ " + label;
+          let r2 = d.resume;
+          let label2 = (r2.name||"??") + " · " + ((r2.education||[])[0]?.school||"??");
+          zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label2;
+          document.getElementById("resume-status").innerHTML = "";
+          renderResumePreview(r2);
         } else {
           zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败") + "<br><span>请尝试粘贴文本后用 AI 解析</span>";
         }
@@ -897,6 +982,62 @@ async function sendAssistant() {
   }
   msgs.scrollTop = msgs.scrollHeight;
 }
+
+function renderResumePreview(r) {
+  var c = document.getElementById('resume-upload').closest('.card');
+  var old = document.getElementById('resume-preview');
+  if (old) old.remove();
+
+  var html = '<div class=resume-preview id=resume-preview>';
+  // Name + contact
+  html += '<div class=rp-name>' + esc(r.name||'') + '</div>';
+  html += '<div class=rp-contact>';
+  if (r.phone) html += '<span>📱 ' + esc(r.phone) + '</span>';
+  if (r.email) html += '<span>📧 ' + esc(r.email) + '</span>';
+  html += '</div>';
+
+  // Education
+  if (r.education && r.education.length > 0) {
+    html += '<div class=rp-section><div class=rp-section-title>🎓 教育背景</div>';
+    r.education.forEach(function(e) {
+      html += '<div class=rp-edu-item>';
+      html += '<div class=rp-item-header><span class=rp-item-title>' + esc(e.school||'') + '</span><span class=rp-item-date>' + esc(e.start||'') + ' - ' + esc(e.end||'') + '</span></div>';
+      html += '<div class=rp-item-sub>' + esc(e.degree||'') + ' · ' + esc(e.major||'') + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Experience
+  if (r.experience && r.experience.length > 0) {
+    html += '<div class=rp-section><div class=rp-section-title>💼 实习/工作经历</div>';
+    r.experience.forEach(function(e) {
+      html += '<div class=rp-exp-item>';
+      html += '<div class=rp-item-header><span class=rp-item-title>' + esc(e.title||'') + ' @ ' + esc(e.company||'') + '</span><span class=rp-item-date>' + esc(e.start||'') + ' - ' + esc(e.end||'') + '</span></div>';
+      if (e.description) html += '<div class=rp-item-desc>' + esc(e.description).slice(0,300) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Skills
+  if (r.skills && r.skills.length > 0) {
+    html += '<div class=rp-section><div class=rp-section-title>🛠 技能</div><div class=rp-tags>';
+    r.skills.forEach(function(s) { html += '<span class=rp-tag>' + esc(s).slice(0,50) + '</span>'; });
+    html += '</div></div>';
+  }
+
+  // Awards
+  if (r.awards && r.awards.length > 0) {
+    html += '<div class=rp-section><div class=rp-section-title>🏆 奖项/证书</div><div class=rp-tags>';
+    r.awards.forEach(function(a) { html += '<span class=rp-tag>' + esc(a).slice(0,60) + '</span>'; });
+    html += '</div></div>';
+  }
+
+  html += '</div>';
+  c.insertAdjacentHTML('afterend', html);
+}
+
 </script>
 <!-- 智能助手 -->
 <div class="assistant-btn" id="assistant-btn" onclick="toggleAssistant()"><span class="icon">💬</span> 使用助手</div>

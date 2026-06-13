@@ -135,17 +135,26 @@ def upload_resume():
             doc = Document(_io5.BytesIO(file_bytes))
             # 提取段落文字
             text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-            # 也提取表格中的文字（常见简历排版）
+            # 提取表格文字
             for table in doc.tables:
                 for row in table.rows:
                     row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
                     if row_text:
                         text += "\n" + row_text
+            # 还不够？深挖 XML 里的所有文字（包括文本框、页眉页脚）
+            if len(text.strip()) < 100:
+                import zipfile, xml.etree.ElementTree as ET
+                with zipfile.ZipFile(_io5.BytesIO(file_bytes)) as z:
+                    if "word/document.xml" in z.namelist():
+                        tree = ET.parse(z.open("word/document.xml"))
+                        for wt in tree.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"):
+                            if wt.text and wt.text.strip():
+                                text += wt.text.strip() + "\n"
             if len(text.strip()) > 50:
                 parsed = call_ds_for_resume(text)
                 source = "Word→DeepSeek"
             else:
-                return jsonify({"error": "Word 文件无法提取内容，请尝试粘贴文本"}), 400
+                return jsonify({"error": "Word 文件无法提取内容（可能全为文本框），请导出为 PDF 后上传"}), 400
 
         elif ext == ".txt":
             text = file_bytes.decode("utf-8", errors="ignore")

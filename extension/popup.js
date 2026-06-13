@@ -54,7 +54,7 @@ function copyAllJDs() {
 
 // ===== 多截图 → Flask VL API =====
 async function captureMultiAndExtract(tab, totalHeight, viewportHeight) {
-  var server = document.getElementById("server").value.trim();
+  var server = "https://offer-hunter-production.up.railway.app";
   var images = [];
   var offset = 0;
   var overlap = 120; // 像素重叠避免切断文字
@@ -181,62 +181,6 @@ document.getElementById("btn-batch").addEventListener("click", async function() 
   } else {
     status("未获取到JD");
   }
-});
-
-// ===== 刷新 Web 控制台（找到已打开的 tab 就刷新并切过去，没找到就打开） =====
-function refreshWebConsole(serverUrl) {
-  return new Promise(function(resolve) {
-    chrome.tabs.query({}, function(tabs) {
-      var found = false;
-      for (var i = 0; i < tabs.length; i++) {
-        if (tabs[i].url && tabs[i].url.indexOf(serverUrl) === 0) {
-          chrome.tabs.reload(tabs[i].id, {}, function() {
-            chrome.tabs.update(tabs[i].id, { active: true });
-            resolve();
-          });
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        chrome.tabs.create({ url: serverUrl }, function() { resolve(); });
-      }
-    });
-  });
-}
-
-// ===== 📤 发送全部（每发一个刷新网页） =====
-document.getElementById("btn-send").addEventListener("click", async function() {
-  if (collectedJDs.length === 0) { status("请先抓取JD"); return; }
-  var server = document.getElementById("server").value.trim();
-  var sent = 0;
-  for (var i = 0; i < collectedJDs.length; i++) {
-    var jd = collectedJDs[i];
-    status("发送中 " + (i+1) + "/" + collectedJDs.length + "...");
-    try {
-      var text = "【岗位名称】" + (jd.title||"") + "\n【公司】" + (jd.company||"") + "\n【岗位JD】\n" + (jd.jd||"");
-      var resp = await fetch(server + "/api/jd/from_plugin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jd_text: text })
-      });
-      var d = await resp.json();
-      if (d.ok) {
-        sent++;
-        log("✅ " + (i+1) + ". " + (jd.title||"").slice(0,20));
-        // 每发一个就刷新网页，考官能看到逐个出现
-        await refreshWebConsole(server);
-      } else {
-        log("❌ " + d.error);
-      }
-    } catch(e) {
-      log("❌ 连接失败");
-      break;
-    }
-  }
-  status("✅ 完成: " + sent + "/" + collectedJDs.length);
-  collectedJDs = [];
-  updateUI();
 });
 
 // ===== 🗑 清空 =====

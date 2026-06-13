@@ -5,7 +5,6 @@ body{font-family:"Microsoft YaHei",sans-serif;width:300px;padding:14px;font-size
 .btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6)}
 .btn:hover{opacity:.9}
 .status{font-size:11px;color:#888;margin:4px 0;text-align:center;min-height:16px}
-input{width:100%;padding:6px;border:1px solid #d9d9d9;border-radius:4px;font-size:11px;margin:6px 0;box-sizing:border-box}
 .count-badge{display:inline-block;background:#e6f7ff;color:#1677ff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold}
 #log{background:#fafbfc;border-radius:4px;padding:6px;max-height:100px;overflow-y:auto;margin-top:8px;font-family:monospace}
 #jd-list{max-height:200px;overflow-y:auto;margin-top:8px}
@@ -18,11 +17,7 @@ input{width:100%;padding:6px;border:1px solid #d9d9d9;border-radius:4px;font-siz
 <button class="btn btn-primary" id="btn-batch" style="background:linear-gradient(135deg,#10b981,#059669)">📦 逐个抓取本页岗位</button>
 <div class="status">已收集: <span class="count-badge" id="count">0</span> 个JD</div>
 <div id="jd-list"></div>
-<input id="server" placeholder="服务器地址" value="http://localhost:5000">
-<div style="display:flex;gap:6px">
-  <button class="btn btn-primary" id="btn-send" style="flex:1;background:linear-gradient(135deg,#f59e0b,#d97706)">📤 发送全部</button>
-  <button class="btn btn-primary" id="btn-clear" style="flex:1;background:#fff;color:#999;border:1px solid #d9d9d9">🗑 清空</button>
-</div>
+<button class="btn btn-primary" id="btn-clear" style="background:#fff;color:#999;border:1px solid #d9d9d9">🗑 清空</button>
 <div id="log"></div>
 <script src="popup.js"></script>
 </body></html>

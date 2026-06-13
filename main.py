@@ -97,7 +97,7 @@ def resume_vision():
         return jsonify({"error": f"VL 调用异常: {str(e)}"}), 500
 
 
-# ===== 简历文件上传 + VL 一步到位解析 =====
+# ===== 简历解析：文本优先（DeepSeek）+ VL 兜底 =====
 @app.route("/api/resume/upload", methods=["POST"])
 def upload_resume():
     if "file" not in request.files:
@@ -108,51 +108,61 @@ def upload_resume():
 
     ext = os.path.splitext(file.filename)[1].lower()
     file_bytes = file.read()
-    images_b64 = []
     import base64
 
     try:
+        text = ""
+        parsed = None
+        source = ""
+
         if ext == ".pdf":
-            # PDF 走客户端 PDF.js 渲染，这里只接受客户端传来的 base64 图片
-            return jsonify({"error": "PDF 请在客户端渲染后再上传"}), 400
-        elif ext in (".png", ".jpg", ".jpeg"):
-            images_b64 = [base64.b64encode(file_bytes).decode()]
-        else:
-            # .txt / .docx: 先提取文字，再用 VL 清洗
-            text = ""
-            if ext == ".txt":
-                text = file_bytes.decode("utf-8", errors="ignore")
-            elif ext == ".docx":
-                from docx import Document
-                import io as _io2
-                doc = Document(_io2.BytesIO(file_bytes))
-                text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
-            if text.strip():
-                # 走视觉清洗管道（Canvas 渲染 + VL）
-                imgs = text_to_images(text)
-                if imgs:
-                    images_b64 = imgs
-                else:
-                    return jsonify({"error": "文字转图片失败"}), 500
+            # PDF → pdfplumber 提取文字 → DeepSeek 解析
+            import pdfplumber, io as _io4
+            with pdfplumber.open(_io4.BytesIO(file_bytes)) as pdf:
+                for page in pdf.pages:
+                    t = page.extract_text()
+                    if t: text += t + "\n"
+            if len(text.strip()) > 200:
+                parsed = call_ds_for_resume(text)
+                source = "PDF文字→DeepSeek"
             else:
-                return jsonify({"error": "无法从文件中提取内容"}), 400
+                # 扫描版 PDF，让客户端用 PDF.js 渲染
+                return jsonify({"needs_vision": True, "text": text.strip()[:100]}), 200
 
-        if not images_b64:
-            return jsonify({"error": "未能生成图片"}), 500
+        elif ext == ".docx":
+            from docx import Document
+            import io as _io5
+            doc = Document(_io5.BytesIO(file_bytes))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            if len(text.strip()) > 50:
+                parsed = call_ds_for_resume(text)
+                source = "Word→DeepSeek"
+            else:
+                return jsonify({"error": "Word 文件内容为空或无法提取"}), 400
 
-        # 调用 VL 一步到位解析
-        parsed = call_vl_for_resume(images_b64)
-        if not parsed or not parsed.get("name"):
-            return jsonify({"error": "VL 未能识别简历信息"}), 500
+        elif ext == ".txt":
+            text = file_bytes.decode("utf-8", errors="ignore")
+            if len(text.strip()) > 50:
+                parsed = call_ds_for_resume(text)
+                source = "TXT→DeepSeek"
+            else:
+                return jsonify({"error": "文本文件内容为空"}), 400
 
-        state["resume"] = parsed
-        state["resume_text"] = json.dumps(parsed, ensure_ascii=False)
-        return jsonify({
-            "ok": True,
-            "resume": parsed,
-            "source": "VL直出",
-        })
+        elif ext in (".png", ".jpg", ".jpeg"):
+            # 图片直接走 VL
+            images_b64 = [base64.b64encode(file_bytes).decode()]
+            parsed = call_vl_for_resume(images_b64)
+            source = "图片→VL"
+
+        else:
+            return jsonify({"error": f"不支持的文件格式: {ext}"}), 400
+
+        if parsed and parsed.get("name"):
+            state["resume"] = parsed
+            state["resume_text"] = json.dumps(parsed, ensure_ascii=False)
+            return jsonify({"ok": True, "resume": parsed, "source": source})
+        else:
+            return jsonify({"error": "未能识别简历信息，请确认文件内容完整"}), 500
 
     except Exception as e:
         return jsonify({"error": f"文件解析失败: {str(e)}"}), 500
@@ -522,7 +532,32 @@ def text_to_images(text: str, max_lines: int = 60) -> list:
     return images
 
 
-# ===== 辅助: 调 VL 解析简历 =====
+# ===== 辅助: 调 DeepSeek 文本解析简历（主力） =====
+def call_ds_for_resume(text: str) -> dict:
+    ds_key = os.environ.get("DS_KEY", "sk-b857ad13b3da41bb8158199d0df10f64")
+    prompt = f"""从以下简历文本中提取结构化信息。返回JSON（只返回JSON，不要解释）：
+{{"name":"姓名","phone":"电话","email":"邮箱",
+ "education":[{{"school":"学校","degree":"学位","major":"专业","start":"开始时间","end":"结束时间"}}],
+ "experience":[{{"company":"公司","title":"职位","start":"开始时间","end":"结束时间","description":"工作描述(200字内)"}}],
+ "skills":["技能"],"awards":["奖项"],"certificates":["证书"]}}
+
+简历文本：
+{text[:4000]}
+"""
+    resp = requests.post(
+        "https://api.deepseek.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"},
+        json={"model": "deepseek-chat", "temperature": 0, "messages": [{"role": "user", "content": prompt}]},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        return {}
+    content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    m = re.search(r"\{[\s\S]*\}", content)
+    return json.loads(m.group(0)) if m else {}
+
+
+# ===== 辅助: 调 VL 解析简历（兜底：扫描版 PDF / 图片） =====
 def call_vl_for_resume(images_b64: list) -> dict:
     api_key = os.environ.get("DASHSCOPE_KEY", "sk-c0ba0e1a0ae84aedb742322fe46148f3")
     content_parts = []

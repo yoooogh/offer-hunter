@@ -819,89 +819,79 @@ if (typeof pdfjsLib !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
+// PDF 视觉兜底（仅扫描版 PDF 触发）
+async function doPDFVision(file, zone) {
+  if (typeof pdfjsLib === 'undefined') {
+    zone.querySelector(".upload-text").innerHTML = "❌ PDF 组件未加载<br><span>请尝试粘贴文本</span>";
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  zone.querySelector(".upload-text").innerHTML = "📄 渲染 PDF...";
+  let reader = new FileReader();
+  reader.onload = async function() {
+    try {
+      let pdf = await pdfjsLib.getDocument({data: new Uint8Array(reader.result)}).promise;
+      let images = [];
+      for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+        let page = await pdf.getPage(i);
+        let vp = page.getViewport({scale: 1.5});
+        let c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+        await page.render({canvasContext: c.getContext('2d'), viewport: vp}).promise;
+        images.push(c.toDataURL('image/png'));
+      }
+      zone.querySelector(".upload-text").innerHTML = "🤖 视觉识别中...";
+      let r = await fetch('/api/resume/vision_parse', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({images: images})
+      });
+      let d = await r.json();
+      if (d.ok && d.resume) {
+        resumeData = d.resume;
+        let label = (d.resume.name||"??") + " · " + ((d.resume.education||[])[0]?.school||"??");
+        zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
+        document.getElementById("resume-status").innerHTML = "";
+        renderResumePreview(d.resume);
+      } else {
+        zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败");
+      }
+    } catch(e) {
+      zone.querySelector(".upload-text").innerHTML = "❌ 扫描版识别失败<br><span>请尝试粘贴文本</span>";
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 async function handleResumeFile(file) {
   if (!file) return;
   let zone = document.getElementById("resume-upload");
   let ext = file.name.split('.').pop().toLowerCase();
 
-  if (ext === 'pdf') {
-    // 检查 PDF.js 是否加载，未加载则等 2 秒重试
-    if (typeof pdfjsLib === 'undefined') {
-      zone.querySelector(".upload-text").innerHTML = "⏳ 组件加载中...";
-      let waited = 0;
-      while (typeof pdfjsLib === 'undefined' && waited < 30) {
-        await new Promise(r => setTimeout(r, 200));
-        waited++;
-      }
-      if (typeof pdfjsLib === 'undefined') {
-        zone.querySelector(".upload-text").innerHTML = "❌ 组件加载失败<br><span>请刷新页面后重试</span>";
-        return;
-      }
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  // 所有文件先走服务端文字提取+DeepSeek（快速、准确）
+  zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
+  let form = new FormData();
+  form.append("file", file);
+  try {
+    let r1 = await fetch('/api/resume/upload', {method:'POST', body:form});
+    let d = await r1.json();
+
+    // 扫描版 PDF：文字提取不够 → 自动走 VL 视觉兜底
+    if (d.needs_vision && ext === 'pdf') {
+      zone.querySelector(".upload-text").innerHTML = "📄 扫描版PDF，切换视觉识别...";
+      await doPDFVision(file, zone);
+      return;
     }
-    // PDF → 客户端 PDF.js 渲染 → 直接发 VL
-    zone.querySelector(".upload-text").innerHTML = "📄 渲染 PDF 页面...";
-    let reader = new FileReader();
-    reader.onload = async function() {
-      try {
-        let pdfData = new Uint8Array(reader.result);
-        let pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
-        let images = [];
-        for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
-          let page = await pdf.getPage(i);
-          let scale = 1.5;
-          let viewport = page.getViewport({scale: scale});
-          let canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          let ctx = canvas.getContext('2d');
-          await page.render({canvasContext: ctx, viewport: viewport}).promise;
-          images.push(canvas.toDataURL('image/png'));
-          zone.querySelector(".upload-text").innerHTML = "📄 渲染 " + i + "/" + pdf.numPages + " 页...";
-        }
-        zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
-        let r = await fetch('/api/resume/vision_parse', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({images: images})
-        });
-        let d = await r.json();
-        if (d.ok && d.resume) {
-          resumeData = d.resume;
-          let r = d.resume;
-          let label = (r.name||"??") + " · " + ((r.education||[])[0]?.school||"??");
-          zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
-          document.getElementById("resume-status").innerHTML = "";
-          renderResumePreview(r);
-        } else {
-          zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败");
-        }
-      } catch(e) {
-        zone.querySelector(".upload-text").innerHTML = "❌ PDF 渲染失败<br><span>请尝试粘贴文本</span>";
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  } else {
-    // 图片/txt/docx → 上传到服务端处理
-    zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
-    let form = new FormData();
-    form.append("file", file);
-    fetch("/api/resume/upload", {method:"POST", body:form})
-      .then(r => r.json())
-      .then(d => {
-        if (d.ok && d.resume) {
-          resumeData = d.resume;
-          let r2 = d.resume;
-          let label2 = (r2.name||"??") + " · " + ((r2.education||[])[0]?.school||"??");
-          zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label2;
-          document.getElementById("resume-status").innerHTML = "";
-          renderResumePreview(r2);
-        } else {
-          zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败") + "<br><span>请尝试粘贴文本后用 AI 解析</span>";
-        }
-      })
-      .catch(e => {
-        zone.querySelector(".upload-text").innerHTML = "❌ 上传失败<br><span>请尝试粘贴文本</span>";
-      });
+
+    if (d.ok && d.resume) {
+      resumeData = d.resume;
+      let label = (d.resume.name||"??") + " · " + ((d.resume.education||[])[0]?.school||"??");
+      zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
+      document.getElementById("resume-status").innerHTML = "";
+      renderResumePreview(d.resume);
+    } else {
+      zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败") + "<br><span>请尝试粘贴文本</span>";
+    }
+  } catch(e) {
+    zone.querySelector(".upload-text").innerHTML = "❌ 上传失败<br><span>请尝试粘贴文本</span>";
   }
 }
 

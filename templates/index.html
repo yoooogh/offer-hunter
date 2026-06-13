@@ -730,12 +730,31 @@ async function startStrategy() {
 function esc(s) { let d = document.createElement("div"); d.textContent = s||""; return d.innerHTML; }
 
 // ===== 简历文件上传 =====
-function handleResumeFile(file) {
+// PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+async function handleResumeFile(file) {
   if (!file) return;
   let zone = document.getElementById("resume-upload");
   let ext = file.name.split('.').pop().toLowerCase();
 
   if (ext === 'pdf') {
+    // 检查 PDF.js 是否加载，未加载则等 2 秒重试
+    if (typeof pdfjsLib === 'undefined') {
+      zone.querySelector(".upload-text").innerHTML = "⏳ 组件加载中...";
+      let waited = 0;
+      while (typeof pdfjsLib === 'undefined' && waited < 30) {
+        await new Promise(r => setTimeout(r, 200));
+        waited++;
+      }
+      if (typeof pdfjsLib === 'undefined') {
+        zone.querySelector(".upload-text").innerHTML = "❌ 组件加载失败<br><span>请刷新页面后重试</span>";
+        return;
+      }
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
     // PDF → 客户端 PDF.js 渲染 → 直接发 VL
     zone.querySelector(".upload-text").innerHTML = "📄 渲染 PDF 页面...";
     let reader = new FileReader();

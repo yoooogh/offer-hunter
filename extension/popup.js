@@ -68,15 +68,19 @@ async function captureMultiAndExtract(tab, totalHeight, viewportHeight) {
     } catch(e) {}
     await new Promise(function(r) { setTimeout(r, 250); });
 
-    // 截图
-    try {
-      var dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 70 });
-      images.push(dataUrl);
-      log("📸 截图 " + images.length + " (offset=" + offset + ")");
-    } catch(e) {
-      log("❌ 截图失败: " + e.message);
-      break;
+    // 截图（失败自动重试一次）
+    var dataUrl = null;
+    for (var retry = 0; retry < 2; retry++) {
+      try {
+        dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 70 });
+        break;
+      } catch(e) {
+        if (retry === 1) { log("截图失败: " + e.message); break; }
+        await new Promise(function(r) { setTimeout(r, 500); });
+      }
     }
+    if (!dataUrl) break;
+    images.push(dataUrl);
 
     offset += step;
     if (images.length >= 6) break; // 最多 6 张，防止无限循环
@@ -151,9 +155,9 @@ document.getElementById("btn-current").addEventListener("click", async function(
   if (jd) {
     collectedJDs.push(jd);
     updateUI();
-    status((jd.title||"").slice(0,30));
+    status("✅ " + (jd.title||"").slice(0,30));
   } else {
-    status("识别失败");
+    status("❌ 识别失败，请重试");
   }
 });
 
@@ -198,9 +202,23 @@ document.getElementById("btn-send").addEventListener("click", async function() {
       else log("❌ " + d.error);
     } catch(e) { log("❌ 连接失败"); break; }
   }
-  status("已发送 " + sent + "/" + collectedJDs.length);
+  var serverUrl = server;
+  status("✅ 已发送 " + sent + "/" + collectedJDs.length);
   collectedJDs = [];
   updateUI();
+  // 自动刷新/打开 Web 控制台
+  chrome.tabs.query({}, function(tabs) {
+    var found = false;
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].url && tabs[i].url.indexOf(serverUrl) === 0) {
+        chrome.tabs.reload(tabs[i].id);
+        chrome.tabs.update(tabs[i].id, { active: true });
+        found = true;
+        break;
+      }
+    }
+    if (!found) chrome.tabs.create({ url: serverUrl });
+  });
 });
 
 // ===== 🗑 清空 =====

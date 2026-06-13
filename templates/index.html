@@ -1017,6 +1017,30 @@ function renderResumePreview(r) {
     html += '</div></div>';
   }
 
+  // Projects
+  if (r.projects && r.projects.length > 0) {
+    html += '<div class=rp-section><div class=rp-section-title>📁 项目经历</div>';
+    r.projects.forEach(function(p) {
+      html += '<div class=rp-exp-item>';
+      html += '<div class=rp-item-header><span class=rp-item-title>' + esc(p.name||'') + '</span><span class=rp-item-sub>' + esc(p.role||'') + '</span></div>';
+      if (p.description) html += '<div class=rp-item-desc>' + esc(p.description).slice(0,200) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Campus
+  if (r.campus && r.campus.length > 0) {
+    html += '<div class=rp-section><div class=rp-section-title>🎓 校园经历</div>';
+    r.campus.forEach(function(c) {
+      html += '<div class=rp-exp-item>';
+      html += '<div class=rp-item-header><span class=rp-item-title>' + esc(c.title||'') + '</span><span class=rp-item-sub>@ ' + esc(c.org||'') + '</span></div>';
+      if (c.description) html += '<div class=rp-item-desc>' + esc(c.description).slice(0,150) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
   // Awards
   if (r.awards && r.awards.length > 0) {
     html += '<div class=rp-section><div class=rp-section-title>🏆 奖项/证书</div><div class=rp-tags>';

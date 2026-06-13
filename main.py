@@ -539,6 +539,8 @@ def call_ds_for_resume(text: str) -> dict:
 {{"name":"姓名","phone":"电话","email":"邮箱",
  "education":[{{"school":"学校","degree":"学位","major":"专业","start":"开始时间","end":"结束时间"}}],
  "experience":[{{"company":"公司","title":"职位","start":"开始时间","end":"结束时间","description":"工作描述(200字内)"}}],
+ "projects":[{{"name":"项目名称","role":"角色","description":"项目描述(150字内)"}}],
+ "campus":[{{"org":"组织/社团","title":"职务","description":"活动描述(100字内)"}}],
  "skills":["技能"],"awards":["奖项"],"certificates":["证书"]}}
 
 简历文本：
@@ -573,6 +575,8 @@ def call_vl_for_resume(images_b64: list) -> dict:
             '{"name":"姓名","phone":"电话","email":"邮箱",'
             '"education":[{"school":"学校","degree":"学位","major":"专业","start":"开始时间","end":"结束时间"}],'
             '"experience":[{"company":"公司","title":"职位","start":"开始时间","end":"结束时间","description":"工作描述"}],'
+            '"projects":[{"name":"项目名称","role":"角色","description":"项目描述"}],'
+            '"campus":[{"org":"组织/社团","title":"职务","description":"活动描述"}],'
             '"skills":["技能1"],"awards":["奖项1"],"certificates":["证书1"]}'
         ),
     })

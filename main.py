@@ -164,7 +164,9 @@ def upload_resume():
         else:
             return jsonify({"error": f"不支持的文件格式: {ext}"}), 400
 
-        if parsed and parsed.get("name"):
+        # 名字可能因 WPS 文本框提取不到，有教育或经历就算成功
+        has_content = parsed and (parsed.get("name") or parsed.get("education") or parsed.get("experience"))
+        if has_content:
             state["resume"] = parsed
             state["resume_text"] = json.dumps(parsed, ensure_ascii=False)
             return jsonify({"ok": True, "resume": parsed, "source": source})

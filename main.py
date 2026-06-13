@@ -133,12 +133,19 @@ def upload_resume():
             from docx import Document
             import io as _io5
             doc = Document(_io5.BytesIO(file_bytes))
+            # 提取段落文字
             text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            # 也提取表格中的文字（常见简历排版）
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        text += "\n" + row_text
             if len(text.strip()) > 50:
                 parsed = call_ds_for_resume(text)
                 source = "Word→DeepSeek"
             else:
-                return jsonify({"error": "Word 文件内容为空或无法提取"}), 400
+                return jsonify({"error": "Word 文件无法提取内容，请尝试粘贴文本"}), 400
 
         elif ext == ".txt":
             text = file_bytes.decode("utf-8", errors="ignore")

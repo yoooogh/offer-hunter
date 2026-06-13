@@ -24,6 +24,30 @@ def parse_resume():
     state["resume_text"] = text
     return jsonify({"ok": True, "resume": state["resume"]})
 
+# ===== 简历 VL 直接解析（客户端渲染图片 → VL 提取结构化数据） =====
+@app.route("/api/resume/vision_parse", methods=["POST"])
+def resume_vision_parse():
+    data = request.json or {}
+    images = data.get("images", [])
+    if not images:
+        return jsonify({"error": "图片数据为空"}), 400
+
+    # 去掉 data URL 前缀
+    cleaned = []
+    for img in images:
+        if isinstance(img, str) and "," in img:
+            img = img.split(",", 1)[1]
+        cleaned.append(img)
+
+    parsed = call_vl_for_resume(cleaned)
+    if not parsed or not parsed.get("name"):
+        return jsonify({"error": "VL 未能识别简历信息，请确认图片清晰可读"}), 500
+
+    state["resume"] = parsed
+    state["resume_text"] = json.dumps(parsed, ensure_ascii=False)
+    return jsonify({"ok": True, "resume": parsed, "source": "VL直出"})
+
+
 # ===== 简历视觉清洗（网站粘贴乱码 → 图片 → VL 识别） =====
 @app.route("/api/resume/vision", methods=["POST"])
 def resume_vision():
@@ -89,12 +113,8 @@ def upload_resume():
 
     try:
         if ext == ".pdf":
-            import fitz  # PyMuPDF
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            for page in doc:
-                pix = page.get_pixmap(dpi=120)
-                images_b64.append(base64.b64encode(pix.tobytes("png")).decode())
-            doc.close()
+            # PDF 走客户端 PDF.js 渲染，这里只接受客户端传来的 base64 图片
+            return jsonify({"error": "PDF 请在客户端渲染后再上传"}), 400
         elif ext in (".png", ".jpg", ".jpeg"):
             images_b64 = [base64.b64encode(file_bytes).decode()]
         else:

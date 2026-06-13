@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Offer 捕手</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root {
   --bg: #f8f9fb;
@@ -732,26 +733,72 @@ function esc(s) { let d = document.createElement("div"); d.textContent = s||""; 
 function handleResumeFile(file) {
   if (!file) return;
   let zone = document.getElementById("resume-upload");
-  zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
-  let form = new FormData();
-  form.append("file", file);
-  fetch("/api/resume/upload", {method:"POST", body:form})
-    .then(r => r.json())
-    .then(d => {
-      if (d.ok && d.resume) {
-        resumeData = d.resume;
-        let r = d.resume;
-        let label = (r.name||"??") + " · " + ((r.education||[])[0]?.school||"??");
-        zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
-        document.getElementById("resume-text").value = JSON.stringify(r, null, 2);
-        document.getElementById("resume-status").textContent = "✅ " + label;
-      } else {
-        zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败") + "<br><span>请尝试粘贴文本后用 AI 解析</span>";
+  let ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'pdf') {
+    // PDF → 客户端 PDF.js 渲染 → 直接发 VL
+    zone.querySelector(".upload-text").innerHTML = "📄 渲染 PDF 页面...";
+    let reader = new FileReader();
+    reader.onload = async function() {
+      try {
+        let pdfData = new Uint8Array(reader.result);
+        let pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
+        let images = [];
+        for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
+          let page = await pdf.getPage(i);
+          let scale = 1.5;
+          let viewport = page.getViewport({scale: scale});
+          let canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          let ctx = canvas.getContext('2d');
+          await page.render({canvasContext: ctx, viewport: viewport}).promise;
+          images.push(canvas.toDataURL('image/png'));
+          zone.querySelector(".upload-text").innerHTML = "📄 渲染 " + i + "/" + pdf.numPages + " 页...";
+        }
+        zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
+        let r = await fetch('/api/resume/vision_parse', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({images: images})
+        });
+        let d = await r.json();
+        if (d.ok && d.resume) {
+          resumeData = d.resume;
+          let label = (d.resume.name||"??") + " · " + ((d.resume.education||[])[0]?.school||"??");
+          zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
+          document.getElementById("resume-text").value = JSON.stringify(d.resume, null, 2);
+          document.getElementById("resume-status").textContent = "✅ " + label;
+        } else {
+          zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败");
+        }
+      } catch(e) {
+        zone.querySelector(".upload-text").innerHTML = "❌ PDF 渲染失败<br><span>请尝试粘贴文本</span>";
       }
-    })
-    .catch(e => {
-      zone.querySelector(".upload-text").innerHTML = "❌ 上传失败<br><span>请尝试粘贴文本</span>";
-    });
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    // 图片/txt/docx → 上传到服务端处理
+    zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
+    let form = new FormData();
+    form.append("file", file);
+    fetch("/api/resume/upload", {method:"POST", body:form})
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok && d.resume) {
+          resumeData = d.resume;
+          let r = d.resume;
+          let label = (r.name||"??") + " · " + ((r.education||[])[0]?.school||"??");
+          zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
+          document.getElementById("resume-text").value = JSON.stringify(r, null, 2);
+          document.getElementById("resume-status").textContent = "✅ " + label;
+        } else {
+          zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败") + "<br><span>请尝试粘贴文本后用 AI 解析</span>";
+        }
+      })
+      .catch(e => {
+        zone.querySelector(".upload-text").innerHTML = "❌ 上传失败<br><span>请尝试粘贴文本</span>";
+      });
+  }
 }
 
 // 拖拽支持

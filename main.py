@@ -542,13 +542,13 @@ def text_to_images(text: str, max_lines: int = 60) -> list:
 # ===== 辅助: 调 DeepSeek 文本解析简历（主力） =====
 def call_ds_for_resume(text: str) -> dict:
     ds_key = os.environ.get("DS_KEY", "sk-b857ad13b3da41bb8158199d0df10f64")
-    prompt = f"""从以下简历文本中提取结构化信息。返回JSON（只返回JSON，不要解释）：
-{{"name":"姓名","phone":"电话","email":"邮箱",
- "education":[{{"school":"学校","degree":"学位","major":"专业","start":"开始时间","end":"结束时间"}}],
- "experience":[{{"company":"公司","title":"职位","start":"开始时间","end":"结束时间","description":"工作描述(200字内)"}}],
- "projects":[{{"name":"项目名称","role":"角色","description":"项目描述(150字内)"}}],
- "campus":[{{"org":"组织/社团","title":"职务","description":"活动描述(100字内)"}}],
- "skills":["技能"],"awards":["奖项"],"certificates":["证书"]}}
+    prompt = f"""从以下简历文本中提取结构化信息。严格返回JSON（只返回JSON，不要markdown包裹，不要省略字段）：
+{{"name":"","phone":"","email":"",
+ "education":[{{"school":"","degree":"","major":"","start":"","end":""}}],
+ "experience":[{{"company":"","title":"","start":"","end":"","description":""}}],
+ "projects":[{{"name":"","role":"","description":""}}],
+ "campus":[{{"org":"","title":"","description":""}}],
+ "skills":[],"awards":[],"certificates":[]}}
 
 简历文本：
 {text[:4000]}
@@ -556,14 +556,41 @@ def call_ds_for_resume(text: str) -> dict:
     resp = requests.post(
         "https://api.deepseek.com/v1/chat/completions",
         headers={"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"},
-        json={"model": "deepseek-chat", "temperature": 0, "messages": [{"role": "user", "content": prompt}]},
+        json={"model": "deepseek-chat", "temperature": 0, "max_tokens": 3000,
+              "messages": [{"role": "user", "content": prompt}]},
         timeout=30,
     )
     if resp.status_code != 200:
         return {}
     content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-    m = re.search(r"\{[\s\S]*\}", content)
-    return json.loads(m.group(0)) if m else {}
+    # 多策略 JSON 提取
+    parsed = None
+    # 1. 直接 parse
+    try:
+        parsed = json.loads(content.strip())
+    except json.JSONDecodeError:
+        pass
+    # 2. 取第一个 { 到最后一个 }
+    if not parsed:
+        m = re.search(r"\{[\s\S]*\}", content)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+    # 3. 去掉 markdown 代码块再试
+    if not parsed:
+        clean = re.sub(r"```(?:json)?\s*|\s*```", "", content).strip()
+        try:
+            parsed = json.loads(clean)
+        except json.JSONDecodeError:
+            m = re.search(r"\{[\s\S]*\}", clean)
+            if m:
+                try:
+                    parsed = json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    pass
+    return parsed or {}
 
 
 # ===== 辅助: 调 VL 解析简历（兜底：扫描版 PDF / 图片） =====

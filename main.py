@@ -73,7 +73,7 @@ def resume_vision():
         return jsonify({"error": f"VL 调用异常: {str(e)}"}), 500
 
 
-# ===== 简历文件上传 =====
+# ===== 简历文件上传 + VL 一步到位解析 =====
 @app.route("/api/resume/upload", methods=["POST"])
 def upload_resume():
     if "file" not in request.files:
@@ -83,30 +83,57 @@ def upload_resume():
         return jsonify({"error": "文件名为空"}), 400
 
     ext = os.path.splitext(file.filename)[1].lower()
-    text = ""
+    file_bytes = file.read()
+    images_b64 = []
 
     try:
-        if ext == ".txt":
-            text = file.read().decode("utf-8", errors="ignore")
-        elif ext == ".docx":
-            from docx import Document
-            import io
-            doc = Document(io.BytesIO(file.read()))
-            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        elif ext == ".pdf":
-            import pdfplumber, io
-            with pdfplumber.open(io.BytesIO(file.read())) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        text += t + "\n"
+        if ext == ".pdf":
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            for page in doc:
+                pix = page.get_pixmap(dpi=150)
+                images_b64.append(pix.tobytes("png"))
+            doc.close()
+        elif ext in (".png", ".jpg", ".jpeg"):
+            import io as _io, base64
+            images_b64 = [file_bytes]
         else:
-            return jsonify({"error": f"不支持的文件格式: {ext}，请上传 .pdf/.docx/.txt"}), 400
+            # .txt / .docx: 先提取文字，再用 VL 清洗
+            text = ""
+            if ext == ".txt":
+                text = file_bytes.decode("utf-8", errors="ignore")
+            elif ext == ".docx":
+                from docx import Document
+                import io as _io2
+                doc = Document(_io2.BytesIO(file_bytes))
+                text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
-        if not text.strip():
-            return jsonify({"error": "无法从文件中提取文字，请确认文件不是扫描版图片"}), 400
+            if text.strip():
+                # 走视觉清洗管道（Canvas 渲染 + VL）
+                imgs = text_to_images(text)
+                if imgs:
+                    images_b64 = imgs
+                else:
+                    return jsonify({"error": "文字转图片失败"}), 500
+            else:
+                return jsonify({"error": "无法从文件中提取内容"}), 400
 
-        return jsonify({"ok": True, "text": text.strip(), "filename": file.filename})
+        if not images_b64:
+            return jsonify({"error": "未能生成图片"}), 500
+
+        # 调用 VL 一步到位解析
+        parsed = call_vl_for_resume(images_b64)
+        if not parsed or not parsed.get("name"):
+            return jsonify({"error": "VL 未能识别简历信息"}), 500
+
+        state["resume"] = parsed
+        state["resume_text"] = json.dumps(parsed, ensure_ascii=False)
+        return jsonify({
+            "ok": True,
+            "resume": parsed,
+            "source": "VL直出",
+        })
+
     except Exception as e:
         return jsonify({"error": f"文件解析失败: {str(e)}"}), 500
 
@@ -446,6 +473,67 @@ def download_extension():
         as_attachment=True,
         download_name="offer-hunter-extension.zip",
     )
+
+
+# ===== 辅助: txt/docx 文字渲染为图片（供 VL 清洗） =====
+def text_to_images(text: str, max_lines: int = 60) -> list:
+    """用 PIL 把文本渲染为白底黑字图片"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return []
+    lines = text.split("\n")
+    images = []
+    for chunk_start in range(0, len(lines), max_lines):
+        chunk = lines[chunk_start:chunk_start + max_lines]
+        w, h = 800, len(chunk) * 22 + 40
+        img = Image.new("RGB", (w, h), "white")
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("C:/Windows/Fonts/simhei.ttf", 14)
+        except Exception:
+            font = ImageFont.load_default()
+        for i, line in enumerate(chunk):
+            draw.text((15, 20 + i * 22), line, fill="black", font=font)
+        import io, base64
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        images.append(base64.b64encode(buf.getvalue()).decode())
+    return images
+
+
+# ===== 辅助: 调 VL 解析简历 =====
+def call_vl_for_resume(images_b64: list) -> dict:
+    api_key = os.environ.get("DASHSCOPE_KEY", "sk-c0ba0e1a0ae84aedb742322fe46148f3")
+    content_parts = []
+    for img in images_b64:
+        content_parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{img}"},
+        })
+    content_parts.append({
+        "type": "text",
+        "text": (
+            "这是一份简历。请提取以下结构化信息，返回JSON（只返回JSON，不要加任何解释）：\n"
+            '{"name":"姓名","phone":"电话","email":"邮箱",'
+            '"education":[{"school":"学校","degree":"学位","major":"专业","start":"开始时间","end":"结束时间"}],'
+            '"experience":[{"company":"公司","title":"职位","start":"开始时间","end":"结束时间","description":"工作描述"}],'
+            '"skills":["技能1"],"awards":["奖项1"],"certificates":["证书1"]}'
+        ),
+    })
+    resp = requests.post(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"model": "qwen-vl-plus", "messages": [{"role": "user", "content": content_parts}]},
+        timeout=60,
+    )
+    if resp.status_code != 200:
+        return {}
+    content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    m = re.search(r"\{[\s\S]*\}", content)
+    if m:
+        return json.loads(m.group(0))
+    return {}
 
 
 if __name__ == "__main__":

@@ -732,17 +732,21 @@ function esc(s) { let d = document.createElement("div"); d.textContent = s||""; 
 function handleResumeFile(file) {
   if (!file) return;
   let zone = document.getElementById("resume-upload");
-  zone.querySelector(".upload-text").innerHTML = "解析中...";
+  zone.querySelector(".upload-text").innerHTML = "🤖 AI 识别中...";
   let form = new FormData();
   form.append("file", file);
   fetch("/api/resume/upload", {method:"POST", body:form})
     .then(r => r.json())
     .then(d => {
-      if (d.ok) {
-        document.getElementById("resume-text").value = d.text;
-        zone.querySelector(".upload-text").innerHTML = "✅ " + file.name + " 已识别<br><span>点击编辑或直接解析</span>";
+      if (d.ok && d.resume) {
+        resumeData = d.resume;
+        let r = d.resume;
+        let label = (r.name||"??") + " · " + ((r.education||[])[0]?.school||"??");
+        zone.querySelector(".upload-text").innerHTML = "✅ 已识别: " + label;
+        document.getElementById("resume-text").value = JSON.stringify(r, null, 2);
+        document.getElementById("resume-status").textContent = "✅ " + label;
       } else {
-        zone.querySelector(".upload-text").innerHTML = "❌ " + d.error + "<br><span>请尝试粘贴文本</span>";
+        zone.querySelector(".upload-text").innerHTML = "❌ " + (d.error||"识别失败") + "<br><span>请尝试粘贴文本后用 AI 解析</span>";
       }
     })
     .catch(e => {

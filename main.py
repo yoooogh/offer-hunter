@@ -82,11 +82,11 @@ def config_handler():
             state["config"]["ds_key"] = data["ds_key"].strip()
         if "dashscope_key" in data:
             state["config"]["dashscope_key"] = data["dashscope_key"].strip()
-        # 新格式：支持切换提供商
+        # 新格式：支持切换提供商（空值不覆盖默认配置）
         for k in ["text_key", "text_url", "text_model",
                   "vision_key", "vision_url", "vision_model"]:
-            if k in data:
-                api_config[k] = data[k].strip() if data[k] else data[k]
+            if k in data and data[k] and data[k].strip():
+                api_config[k] = data[k].strip()
         # 同步到 state.config
         if api_config.get("text_key"):
             state["config"]["ds_key"] = api_config["text_key"]

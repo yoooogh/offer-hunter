@@ -947,20 +947,21 @@ var providerPresets = {
 function applyProviderPreset() {
   var preset = providerPresets[document.getElementById('provider-preset').value];
   if (!preset) return;
-  if (preset.text_url) document.getElementById('cfg-text-url').value = preset.text_url;
-  if (preset.text_model) document.getElementById('cfg-text-model').value = preset.text_model;
-  if (preset.vision_url) document.getElementById('cfg-vision-url').value = preset.vision_url;
-  if (preset.vision_model) document.getElementById('cfg-vision-model').value = preset.vision_model;
+  // 自定义：清空 URL 和模型字段，让用户自行填写
+  document.getElementById('cfg-text-url').value = preset.text_url || '';
+  document.getElementById('cfg-text-model').value = preset.text_model || '';
+  document.getElementById('cfg-vision-url').value = preset.vision_url || '';
+  document.getElementById('cfg-vision-model').value = preset.vision_model || '';
 }
 
 async function saveAPIConfig() {
   var data = {
     text_key: document.getElementById('cfg-text-key').value || '',
-    text_url: document.getElementById('cfg-text-url').value || providerPresets.deepseek.text_url,
-    text_model: document.getElementById('cfg-text-model').value || 'deepseek-chat',
+    text_url: document.getElementById('cfg-text-url').value || '',
+    text_model: document.getElementById('cfg-text-model').value || '',
     vision_key: document.getElementById('cfg-vision-key').value || '',
-    vision_url: document.getElementById('cfg-vision-url').value || providerPresets.deepseek.vision_url,
-    vision_model: document.getElementById('cfg-vision-model').value || 'qwen-vl-plus'
+    vision_url: document.getElementById('cfg-vision-url').value || '',
+    vision_model: document.getElementById('cfg-vision-model').value || ''
   };
   try {
     var r = await fetch('/api/config', {

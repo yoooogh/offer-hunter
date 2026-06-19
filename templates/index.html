@@ -354,8 +354,8 @@ textarea::placeholder{color:#c4c4c4}
   <p>AI 求职智能匹配 · 找到属于你的 offer</p>
   <div class="badge" style="margin-bottom:8px">Powered by DeepSeek</div>
   <div id="key-status" style="font-size:11px;margin-bottom:8px">
-    <span id="key-ds">🔴 DeepSeek 未配置</span> &nbsp;
-    <span id="key-ds2">🔴 千问 未配置</span>
+    <span id="key-ds">🔴 文本 API 未配置</span> &nbsp;
+    <span id="key-ds2">🔴 视觉 API 未配置</span>
   </div>
   <a href="/extension/download" style="display:inline-block;padding:8px 18px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:20px;text-decoration:none;font-size:12px;font-weight:500;position:relative">⬇ 下载浏览器插件</a>
   <span style="font-size:11px;color:var(--muted);margin-left:8px;position:relative">在 BOSS 直聘一键抓取 JD</span>
@@ -557,8 +557,8 @@ async function loadApiKeyStatus() {
   try {
     const r = await fetch('/api/config');
     const d = await r.json();
-    document.getElementById('key-ds').innerHTML = d.ds_configured ? '🟢 DeepSeek 已配置' : '🔴 DeepSeek 未配置';
-    document.getElementById('key-ds2').innerHTML = d.dashscope_configured ? '🟢 千问 已配置' : '🔴 千问 未配置';
+    document.getElementById('key-ds').innerHTML = d.ds_configured ? '🟢 文本 API 已配置' : '🔴 文本 API 未配置';
+    document.getElementById('key-ds2').innerHTML = d.dashscope_configured ? '🟢 视觉 API 已配置' : '🔴 视觉 API 未配置';
     if (d.ds_configured) {
       document.getElementById('inp-ds-key').placeholder = '已配置（可修改）';
     }

@@ -61,11 +61,11 @@ def require_engine():
         raise ValueError("请先在左侧面板配置 DeepSeek API Key")
     return eng
 
-def require_dashscope():
-    """需要 DashScope Key 的操作前校验"""
-    key = get_dashscope_key()
+def require_vision():
+    """需要视觉 API Key 的操作前校验（支持 DashScope/HunYuan/自定义）"""
+    key = vision_api_key()
     if not key:
-        raise ValueError("请先在左侧面板配置 DashScope API Key（阿里云百炼）")
+        raise ValueError("请先在 API 配置面板填写视觉 API Key")
     return key
 
 @app.route("/")
@@ -95,11 +95,11 @@ def config_handler():
         global engine; engine = None
         return jsonify({"ok": True,
                         "ds_configured": bool(get_ds_key()),
-                        "dashscope_configured": bool(get_dashscope_key())})
+                        "dashscope_configured": bool(vision_api_key())})
     # GET: 返回当前配置（不暴露完整 Key）
     return jsonify({
         "ds_configured": bool(get_ds_key()),
-        "dashscope_configured": bool(get_dashscope_key()),
+        "dashscope_configured": bool(vision_api_key()),
         "text_provider": api_config["text_provider"],
         "text_model": api_config["text_model"],
         "vision_model": api_config["vision_model"],
@@ -156,7 +156,7 @@ def resume_vision():
         img_b64 = img_b64.split(",", 1)[1]
 
     try:
-        api_key = require_dashscope()
+        api_key = require_vision()
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     try:
@@ -486,9 +486,9 @@ def jd_vision():
     if not images:
         return jsonify({"error": "截图数据为空"}), 400
 
-    api_key = get_dashscope_key()
+    api_key = vision_api_key()
     if not api_key:
-        return jsonify({"error": "请先在网页左侧面板配置 DashScope API Key（阿里云百炼平台获取）"}), 400
+        return jsonify({"error": "请先在网页 API 配置面板填写视觉 API Key"}), 400
 
     # 构建 content 数组：多张图片 + 一段提示
     content_parts = []
@@ -722,7 +722,7 @@ def call_ds_for_resume(text: str) -> dict:
 
 # ===== 辅助: 调 VL 解析简历（兜底：扫描版 PDF / 图片） =====
 def call_vl_for_resume(images_b64: list) -> dict:
-    api_key = get_dashscope_key()
+    api_key = vision_api_key()
     if not api_key:
         return {}
     content_parts = []

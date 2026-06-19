@@ -6,23 +6,117 @@ import os, json, re, requests
 
 app = Flask(__name__)
 CORS(app)
-engine = MatchEngine(os.environ.get("DS_KEY", "sk-b857ad13b3da41bb8158199d0df10f64"))
+
+# ===== API 配置（运行时可变，用户自行填写 Key） =====
+api_config = {
+    "text_provider": "deepseek",
+    "text_key": "",
+    "text_url": "https://api.deepseek.com/v1/chat/completions",
+    "text_model": "deepseek-chat",
+    "vision_provider": "dashscope",
+    "vision_key": "",
+    "vision_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "vision_model": "qwen-vl-plus",
+}
+
+def text_api_url():  return api_config["text_url"]
+def text_api_key():  return api_config["text_key"]
+def text_model():    return api_config["text_model"]
+def vision_api_url(): return api_config["vision_url"]
+def vision_api_key(): return api_config["vision_key"]
+def vision_model():  return api_config["vision_model"]
+
 
 # 内存存储（Demo 用）
-state = {"resume": None, "resume_text": "", "jds": [], "weight": {"exp": 40, "hard": 25, "skill": 15, "company": 10, "fit": 10}}
+state = {
+    "resume": None, "resume_text": "", "jds": [],
+    "weight": {"exp": 40, "hard": 25, "skill": 15, "company": 10, "fit": 10},
+    "config": {"ds_key": "", "dashscope_key": ""}  # 用户通过网页设置的 Key
+}
+
+engine = None
+
+def get_ds_key():
+    """优先使用网页配置的 Key，否则尝试环境变量"""
+    return state["config"].get("ds_key") or os.environ.get("DS_KEY", "")
+
+def get_dashscope_key():
+    """优先使用网页配置的 Key，否则尝试环境变量"""
+    return state["config"].get("dashscope_key") or os.environ.get("DASHSCOPE_KEY", "")
+
+def get_engine():
+    """懒加载 MatchEngine，Key 变化时重建"""
+    global engine
+    key = get_ds_key()
+    if not key:
+        return None
+    if engine is None or engine.key != key:
+        engine = MatchEngine(key)
+    return engine
+
+def require_engine():
+    """需要 DeepSeek Key 的操作前校验"""
+    eng = get_engine()
+    if not eng:
+        raise ValueError("请先在左侧面板配置 DeepSeek API Key")
+    return eng
+
+def require_dashscope():
+    """需要 DashScope Key 的操作前校验"""
+    key = get_dashscope_key()
+    if not key:
+        raise ValueError("请先在左侧面板配置 DashScope API Key（阿里云百炼）")
+    return key
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
+# ===== API 配置（用户通过网页设置自己的 Key 和提供商） =====
+@app.route("/api/config", methods=["GET", "POST"])
+def config_handler():
+    if request.method == "POST":
+        data = request.json or {}
+        # 旧格式兼容
+        if "ds_key" in data:
+            state["config"]["ds_key"] = data["ds_key"].strip()
+        if "dashscope_key" in data:
+            state["config"]["dashscope_key"] = data["dashscope_key"].strip()
+        # 新格式：支持切换提供商
+        for k in ["text_key", "text_url", "text_model",
+                  "vision_key", "vision_url", "vision_model"]:
+            if k in data:
+                api_config[k] = data[k].strip() if data[k] else data[k]
+        # 同步到 state.config
+        if api_config.get("text_key"):
+            state["config"]["ds_key"] = api_config["text_key"]
+        if api_config.get("vision_key"):
+            state["config"]["dashscope_key"] = api_config["vision_key"]
+        global engine; engine = None
+        return jsonify({"ok": True,
+                        "ds_configured": bool(get_ds_key()),
+                        "dashscope_configured": bool(get_dashscope_key())})
+    # GET: 返回当前配置（不暴露完整 Key）
+    return jsonify({
+        "ds_configured": bool(get_ds_key()),
+        "dashscope_configured": bool(get_dashscope_key()),
+        "text_provider": api_config["text_provider"],
+        "text_model": api_config["text_model"],
+        "vision_model": api_config["vision_model"],
+        "text_key_preview": api_config.get("text_key","")[:8] + "***" if api_config.get("text_key") else "",
+        "vision_key_preview": api_config.get("vision_key","")[:8] + "***" if api_config.get("vision_key") else "",
+    })
+
 # ===== 简历 =====
 @app.route("/api/resume/parse", methods=["POST"])
 def parse_resume():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     data = request.json or {}
     text = data.get("text", "").strip()
     if not text:
         return jsonify({"error": "简历为空"}), 400
-    state["resume"] = engine.parse_resume(text)
+    state["resume"] = eng.parse_resume(text)
     state["resume_text"] = text
     return jsonify({"ok": True, "resume": state["resume"]})
 
@@ -61,13 +155,16 @@ def resume_vision():
     if "," in img_b64:
         img_b64 = img_b64.split(",", 1)[1]
 
-    api_key = os.environ.get("DASHSCOPE_KEY", "sk-c0ba0e1a0ae84aedb742322fe46148f3")
+    try:
+        api_key = require_dashscope()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     try:
         resp = requests.post(
-            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            vision_api_url(),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model": "qwen-vl-plus",
+                "model": vision_model(),
                 "messages": [{"role": "user", "content": [
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
                     {"type": "text", "text": (
@@ -225,10 +322,12 @@ def assistant():
     messages.append({"role": "user", "content": question})
 
     try:
-        result = engine.call(json.dumps(messages, ensure_ascii=False), 500)
-        # engine.call 返回的是原始文本，需要提取有用的部分
+        eng = require_engine()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        result = eng.call(json.dumps(messages, ensure_ascii=False), 500)
         answer = result.strip()
-        # 如果返回太长，截断
         if len(answer) > 300:
             answer = answer[:300] + "..."
         return jsonify({"ok": True, "answer": answer})
@@ -239,13 +338,15 @@ def assistant():
 # ===== JD =====
 @app.route("/api/jd/add", methods=["POST"])
 def add_jd():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     data = request.json or {}
     text = data.get("text", "").strip()
     if not text:
         return jsonify({"error": "JD为空"}), 400
     if len(text) < 20:
         return jsonify({"error": "JD内容太短（至少20字）"}), 400
-    jd = engine.parse_jd(text)
+    jd = eng.parse_jd(text)
     jd["raw"] = text
     state["jds"].append(jd)
     return jsonify({"ok": True, "jd": jd, "total": len(state["jds"]), "parsed": bool(jd.get("title") and jd["title"] != "未知岗位")})
@@ -258,41 +359,47 @@ def clear_jds():
 # ===== 批量匹配 =====
 @app.route("/api/match", methods=["POST"])
 def batch_match():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     if not state["resume"]:
         return jsonify({"error": "请先上传简历"}), 400
     if not state["jds"]:
         return jsonify({"error": "请先添加JD"}), 400
-    results = engine.batch_match(state["resume"], state["jds"])
-    preferences = engine.analyze_preferences(state["resume"], state["jds"])
+    results = eng.batch_match(state["resume"], state["jds"])
+    preferences = eng.analyze_preferences(state["resume"], state["jds"])
     state["last_preferences"] = preferences
     # 公司分析（取前10个）
     companies = {}
     for jd in state["jds"][:10]:
         name = jd.get("company", "")
         if name and name not in companies:
-            companies[name] = engine.analyze_company(name, jd.get("industry", ""))
+            companies[name] = eng.analyze_company(name, jd.get("industry", ""))
     return jsonify({"ok": True, "results": results, "preferences": preferences, "companies": companies, "total": len(results)})
 
 # ===== 深度诊断 =====
 @app.route("/api/diagnose", methods=["POST"])
 def diagnose():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     data = request.json or {}
     jd_text = data.get("jd_text", "").strip()
     if not state["resume"] or not jd_text:
         return jsonify({"error": "需要简历和JD"}), 400
-    jd = engine.parse_jd(jd_text)
-    result = engine.deep_diagnose(state["resume"], jd)
+    jd = eng.parse_jd(jd_text)
+    result = eng.deep_diagnose(state["resume"], jd)
     return jsonify({"ok": True, "diagnosis": result})
 
 # ===== 简历优化 =====
 @app.route("/api/optimize", methods=["POST"])
 def optimize():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     if not state["resume"]:
         return jsonify({"error": "请先上传简历"}), 400
     target_jds = state["jds"][:5]
     if not target_jds:
         return jsonify({"error": "请先添加目标JD"}), 400
-    result = engine.optimize_resume(state["resume"], target_jds)
+    result = eng.optimize_resume(state["resume"], target_jds)
     return jsonify({"ok": True, "optimization": result})
 
 # ===== 投递管理 =====
@@ -316,6 +423,8 @@ def update_track():
 # ===== 投递策略 =====
 @app.route("/api/strategy", methods=["POST"])
 def strategy():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     if not state["resume"] or not state["jds"]:
         return jsonify({"error": "请先上传简历和JD"}), 400
     jds_with_idx = [{"idx": i, **j} for i, j in enumerate(state["jds"])]
@@ -326,7 +435,7 @@ def strategy():
         "applied": {k: v for k, v in tracks.items()},
         "preferences": state.get("last_preferences", {})
     }, ensure_ascii=False)
-    result = engine.call(
+    result = eng.call(
         f"你是投递策略顾问。分析候选人情况和岗位列表，给出投递策略:\n{text}\n\n"
         "输出JSON:\n"
         '{"priority_order":"投递顺序建议(先投哪些,为什么)",'
@@ -351,11 +460,13 @@ def weight():
 # ===== BOSS 插件接收 =====
 @app.route("/api/jd/from_plugin", methods=["POST"])
 def from_plugin():
+    try: eng = require_engine()
+    except ValueError as e: return jsonify({"error": str(e)}), 400
     data = request.json or {}
     jd_text = data.get("jd_text", "").strip()
     if not jd_text:
         return jsonify({"error": "JD为空"}), 400
-    jd = engine.parse_jd(jd_text)
+    jd = eng.parse_jd(jd_text)
     jd["raw"] = jd_text
     jd["source"] = "BOSS直聘"
     state["jds"].append(jd)
@@ -375,9 +486,9 @@ def jd_vision():
     if not images:
         return jsonify({"error": "截图数据为空"}), 400
 
-    api_key = os.environ.get("DASHSCOPE_KEY", "sk-c0ba0e1a0ae84aedb742322fe46148f3")
+    api_key = get_dashscope_key()
     if not api_key:
-        return jsonify({"error": "请设置 DASHSCOPE_KEY 环境变量（阿里云通义千问 API Key）"}), 500
+        return jsonify({"error": "请先在网页左侧面板配置 DashScope API Key（阿里云百炼平台获取）"}), 400
 
     # 构建 content 数组：多张图片 + 一段提示
     content_parts = []
@@ -424,13 +535,13 @@ def jd_vision():
 
     try:
         resp = requests.post(
-            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            vision_api_url(),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "qwen-vl-plus",  # plus 比 max 快 2-3 倍，JD 文本提取场景够用
+                "model": vision_model(),
                 "messages": [{
                     "role": "user",
                     "content": content_parts,
@@ -462,7 +573,8 @@ def jd_vision():
 
         # 构造完整文本发给 DeepSeek 做结构化解析
         full_text = f"【岗位名称】{title}\n【公司】{company}\n【薪资】{salary}\n【地点】{location}\n【岗位JD】\n{jd_text}"
-        parsed = engine.parse_jd(full_text)
+        eng = get_engine()
+        parsed = eng.parse_jd(full_text) if eng else {"title": title, "company": company}
         parsed["raw"] = full_text
         parsed["source"] = "BOSS直聘(VL)"
 
@@ -554,7 +666,9 @@ def text_to_images(text: str, max_lines: int = 60) -> list:
 
 # ===== 辅助: 调 DeepSeek 文本解析简历（主力） =====
 def call_ds_for_resume(text: str) -> dict:
-    ds_key = os.environ.get("DS_KEY", "sk-b857ad13b3da41bb8158199d0df10f64")
+    ds_key = get_ds_key()
+    if not ds_key:
+        return {}
     prompt = f"""从以下简历文本中提取结构化信息。严格返回JSON（只返回JSON，不要markdown包裹，不要省略字段）：
 {{"name":"","phone":"","email":"",
  "education":[{{"school":"","degree":"","major":"","start":"","end":""}}],
@@ -567,9 +681,9 @@ def call_ds_for_resume(text: str) -> dict:
 {text[:4000]}
 """
     resp = requests.post(
-        "https://api.deepseek.com/v1/chat/completions",
+        api_config["text_url"],
         headers={"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"},
-        json={"model": "deepseek-chat", "temperature": 0, "max_tokens": 3000,
+        json={"model": api_config["text_model"], "temperature": 0, "max_tokens": 3000,
               "messages": [{"role": "user", "content": prompt}]},
         timeout=30,
     )
@@ -608,7 +722,9 @@ def call_ds_for_resume(text: str) -> dict:
 
 # ===== 辅助: 调 VL 解析简历（兜底：扫描版 PDF / 图片） =====
 def call_vl_for_resume(images_b64: list) -> dict:
-    api_key = os.environ.get("DASHSCOPE_KEY", "sk-c0ba0e1a0ae84aedb742322fe46148f3")
+    api_key = get_dashscope_key()
+    if not api_key:
+        return {}
     content_parts = []
     for img in images_b64:
         content_parts.append({
@@ -628,9 +744,9 @@ def call_vl_for_resume(images_b64: list) -> dict:
         ),
     })
     resp = requests.post(
-        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        api_config["vision_url"],
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={"model": "qwen-vl-plus", "messages": [{"role": "user", "content": content_parts}]},
+        json={"model": api_config["vision_model"], "messages": [{"role": "user", "content": content_parts}]},
         timeout=60,
     )
     if resp.status_code != 200:

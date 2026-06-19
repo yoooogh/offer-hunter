@@ -352,7 +352,11 @@ textarea::placeholder{color:#c4c4c4}
 <div class="header">
   <h1>🎯 Offer 捕手</h1>
   <p>AI 求职智能匹配 · 找到属于你的 offer</p>
-  <div class="badge" style="margin-bottom:12px">Powered by DeepSeek</div>
+  <div class="badge" style="margin-bottom:8px">Powered by DeepSeek</div>
+  <div id="key-status" style="font-size:11px;margin-bottom:8px">
+    <span id="key-ds">🔴 DeepSeek 未配置</span> &nbsp;
+    <span id="key-ds2">🔴 千问 未配置</span>
+  </div>
   <a href="/extension/download" style="display:inline-block;padding:8px 18px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:20px;text-decoration:none;font-size:12px;font-weight:500;position:relative">⬇ 下载浏览器插件</a>
   <span style="font-size:11px;color:var(--muted);margin-left:8px;position:relative">在 BOSS 直聘一键抓取 JD</span>
 </div>
@@ -376,13 +380,70 @@ textarea::placeholder{color:#c4c4c4}
     <div class="tab" data-panel="strategy">
       <span class="tab-icon">💡</span>投递策略
     </div>
+    <div class="tab" data-panel="apikey">
+      <span class="tab-icon">🔑</span>API Key
+    </div>
     <div class="tab" data-panel="settings">
       <span class="tab-icon">⚙</span>权重设置
     </div>
   </div>
 
+  <!-- Panel 0: API Key 配置 -->
+  <div class="panel" id="panel-apikey">
+    <div class="card" style="background:linear-gradient(135deg,#fef3c7,#fef9c3);border:1px solid #f59e0b">
+      <div class="card-title" style="color:#92400e">⚠️ 安全说明</div>
+      <p style="font-size:13px;color:#92400e;margin:0">
+        你的 API Key <strong>仅存储在服务器内存中</strong>，不会写入硬盘或上传到任何第三方。<br>
+        关闭服务器后 Key 自动清除。请放心使用。
+      </p>
+    </div>
+    <div class="card">
+      <div class="card-title">🔑 DeepSeek API Key</div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">用于简历解析、JD 匹配、深度诊断、策略建议</p>
+      <input type="password" id="inp-ds-key" class="input" placeholder="sk-..." style="font-family:monospace">
+      <p style="font-size:11px;color:var(--muted);margin:4px 0 0">
+        获取地址：<a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a>
+      </p>
+    </div>
+    <div class="card">
+      <div class="card-title">🖼️ DashScope API Key（通义千问）</div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">用于简历截图识别、JD 截图提取（浏览器插件 VL 功能）</p>
+      <input type="password" id="inp-ds2-key" class="input" placeholder="sk-..." style="font-family:monospace">
+      <p style="font-size:11px;color:var(--muted);margin:4px 0 0">
+        获取地址：<a href="https://dashscope.aliyun.com/" target="_blank">dashscope.aliyun.com</a>
+      </p>
+      <p style="font-size:11px;color:var(--muted);margin:2px 0 0">💡 如果不需要 VL 截图识别功能，可以不填</p>
+    </div>
+    <button class="btn btn-primary" onclick="saveApiKeys()" style="margin-top:8px">💾 保存配置</button>
+    <span class="status" id="apikey-status"></span>
+  </div>
+
   <!-- Panel 1: 批量匹配 -->
   <div class="panel active" id="panel-batch">
+    <div class="card" id="api-config-card" style="background:#fafbff;border-color:#e0e7ff">
+      <div class="card-title" style="cursor:pointer" onclick="document.getElementById('api-config-body').classList.toggle('hidden')">🔑 API 配置 <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px" id="api-config-status"></span></div>
+      <div id="api-config-body" class="hidden">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <select id="provider-preset" onchange="applyProviderPreset()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+            <option value="deepseek">DeepSeek + DashScope (默认)</option>
+            <option value="hunyuan">腾讯混元 HunYuan</option>
+            <option value="custom">自定义 Open-AI兼容</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="cfg-text-key" placeholder="文本 API Key" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:140px">
+          <input id="cfg-text-url" placeholder="文本 API URL" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:140px">
+          <input id="cfg-text-model" placeholder="模型名" style="width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <input id="cfg-vision-key" placeholder="视觉 API Key" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:140px">
+          <input id="cfg-vision-url" placeholder="视觉 API URL" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:140px">
+          <input id="cfg-vision-model" placeholder="视觉模型名" style="width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+        </div>
+        <button class="btn btn-primary" onclick="saveAPIConfig()" style="margin-top:8px;width:auto;font-size:12px">💾 保存配置</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">我的简历</div>
       <div class="upload-zone" id="resume-upload" onclick="document.getElementById('resume-file').click()">
@@ -490,6 +551,50 @@ document.querySelectorAll(".tab").forEach(t => {
 
 // ===== State =====
 let resumeData = null;
+
+// ===== API Key 管理 =====
+async function loadApiKeyStatus() {
+  try {
+    const r = await fetch('/api/config');
+    const d = await r.json();
+    document.getElementById('key-ds').innerHTML = d.ds_configured ? '🟢 DeepSeek 已配置' : '🔴 DeepSeek 未配置';
+    document.getElementById('key-ds2').innerHTML = d.dashscope_configured ? '🟢 千问 已配置' : '🔴 千问 未配置';
+    if (d.ds_configured) {
+      document.getElementById('inp-ds-key').placeholder = '已配置（可修改）';
+    }
+    if (d.dashscope_configured) {
+      document.getElementById('inp-ds2-key').placeholder = '已配置（可修改）';
+    }
+  } catch(e) {}
+}
+
+async function saveApiKeys() {
+  const ds = document.getElementById('inp-ds-key').value.trim();
+  const ds2 = document.getElementById('inp-ds2-key').value.trim();
+  if (!ds && !ds2) {
+    document.getElementById('apikey-status').textContent = '请至少填入一个 Key';
+    return;
+  }
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ds_key: ds, dashscope_key: ds2})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('apikey-status').textContent = '✅ 配置已保存';
+      document.getElementById('inp-ds-key').value = '';
+      document.getElementById('inp-ds2-key').value = '';
+      loadApiKeyStatus();
+    }
+  } catch(e) {
+    document.getElementById('apikey-status').textContent = '保存失败: ' + e.message;
+  }
+}
+
+// 页面加载时检查 Key 状态
+loadApiKeyStatus();
 
 // ===== Resume =====
 // 清洗从网页/PDF 粘贴产生的乱码（隐藏水印、CSS 残余、hash 串）
@@ -818,6 +923,68 @@ function esc(s) { let d = document.createElement("div"); d.textContent = s||""; 
 if (typeof pdfjsLib !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
+
+// ===== API 配置面板 =====
+var providerPresets = {
+  deepseek: {
+    text_url: 'https://api.deepseek.com/v1/chat/completions',
+    text_model: 'deepseek-chat',
+    vision_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    vision_model: 'qwen-vl-plus'
+  },
+  hunyuan: {
+    text_url: 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions',
+    text_model: 'hunyuan-lite',
+    vision_url: 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions',
+    vision_model: 'hunyuan-vision'
+  },
+  custom: {
+    text_url: '', text_model: '',
+    vision_url: '', vision_model: ''
+  }
+};
+
+function applyProviderPreset() {
+  var preset = providerPresets[document.getElementById('provider-preset').value];
+  if (!preset) return;
+  if (preset.text_url) document.getElementById('cfg-text-url').value = preset.text_url;
+  if (preset.text_model) document.getElementById('cfg-text-model').value = preset.text_model;
+  if (preset.vision_url) document.getElementById('cfg-vision-url').value = preset.vision_url;
+  if (preset.vision_model) document.getElementById('cfg-vision-model').value = preset.vision_model;
+}
+
+async function saveAPIConfig() {
+  var data = {
+    text_key: document.getElementById('cfg-text-key').value || '',
+    text_url: document.getElementById('cfg-text-url').value || providerPresets.deepseek.text_url,
+    text_model: document.getElementById('cfg-text-model').value || 'deepseek-chat',
+    vision_key: document.getElementById('cfg-vision-key').value || '',
+    vision_url: document.getElementById('cfg-vision-url').value || providerPresets.deepseek.vision_url,
+    vision_model: document.getElementById('cfg-vision-model').value || 'qwen-vl-plus'
+  };
+  try {
+    var r = await fetch('/api/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    var d = await r.json();
+    document.getElementById('api-config-status').textContent = (d.ds_configured ? '✅' : '⚠️') + ' 文本 | ' + (d.dashscope_configured ? '✅' : '⚠️') + ' 视觉';
+    document.getElementById('api-config-body').classList.add('hidden');
+  } catch(e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+// 页面加载时读取配置状态
+(async function() {
+  try {
+    var r = await fetch('/api/config');
+    var d = await r.json();
+    document.getElementById('api-config-status').textContent = (d.ds_configured ? '✅' : '⚠️') + ' 文本 | ' + (d.dashscope_configured ? '✅' : '⚠️') + ' 视觉';
+    if (d.text_key_preview) document.getElementById('cfg-text-key').placeholder = '已配置: ' + d.text_key_preview;
+    if (d.vision_key_preview) document.getElementById('cfg-vision-key').placeholder = '已配置: ' + d.vision_key_preview;
+  } catch(e) {}
+})();
 
 // PDF 视觉兜底（仅扫描版 PDF 触发）
 async function doPDFVision(file, zone) {

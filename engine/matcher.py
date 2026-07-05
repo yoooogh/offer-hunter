@@ -2,13 +2,14 @@
 import json, re, urllib.request
 
 class MatchEngine:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, api_url: str = "", api_model: str = ""):
         self.key = api_key
-        self.api = "https://api.deepseek.com/v1/chat/completions"
+        self.api = api_url or "https://api.deepseek.com/v1/chat/completions"
+        self.model = api_model or "deepseek-chat"
 
     def call(self, prompt: str, max_tokens: int = 3000) -> str:
         body = json.dumps({
-            "model": "deepseek-chat", "max_tokens": max_tokens, "temperature": 0.3,
+            "model": self.model, "max_tokens": max_tokens, "temperature": 0.3,
             "messages": [{"role": "user", "content": prompt}]
         }).encode()
         req = urllib.request.Request(self.api, data=body, headers={
@@ -59,23 +60,27 @@ class MatchEngine:
         }
 
     # ===== 批量匹配 =====
-    def batch_match(self, resume: dict, jds: list) -> list:
+    def batch_match(self, resume: dict, jds: list, weights: dict = None) -> list:
+        if weights is None:
+            weights = {"exp": 40, "hard": 25, "skill": 15, "company": 10, "fit": 10}
         results = []
-        BATCH = 10
+        BATCH = 5
         for i in range(0, len(jds), BATCH):
             batch = jds[i:i+BATCH]
-            scored = self._match_batch(resume, batch)
+            scored = self._match_batch(resume, batch, weights)
             results.extend(scored)
         results.sort(key=lambda x: x["score"], reverse=True)
         return results
 
-    def _match_batch(self, resume: dict, jds: list) -> list:
+    def _match_batch(self, resume: dict, jds: list, weights: dict) -> list:
         profile = json.dumps(resume, ensure_ascii=False)
         jd_text = "\n".join(f"岗位{i+1}: {j.get('title','')} 公司:{j.get('company','')}\n要求:{json.dumps(j.get('requirements',{}),ensure_ascii=False)}\n职责:{json.dumps(j.get('responsibilities',[]),ensure_ascii=False)}" for i,j in enumerate(jds))
 
+        w = weights
         prompt = (
-            "你是招聘匹配专家。给每个岗位打分。\n"
-            "总分(0-100) = 经验匹配(0-40)+学科兼容(0-25)+技能覆盖(0-15)+公司匹配(0-10)+综合适配(0-10)\n"
+            "你是招聘匹配专家。给每个岗位严格按以下维度打分。\n"
+            f"总分(0-100) = 经验匹配(0-{w['exp']})+学科兼容(0-{w['hard']})+技能覆盖(0-{w['skill']})+公司匹配(0-{w['company']})+综合适配(0-{w['fit']})\n"
+            f"重要: 每个维度的分数不得超过该维度的满分({w['exp']}/{w['hard']}/{w['skill']}/{w['company']}/{w['fit']})。\n"
             "学科分七类:商科/理科/工科/文科/医科/艺术/其他。同大类正常打分,跨大类≤10。\n"
             "技能是加分项不是及格线。\n"
             "输出分析+优点+不足+建议。\n"
@@ -86,14 +91,46 @@ class MatchEngine:
         m = re.search(r'\[[\s\S]*\]', resp)
         scores = json.loads(m.group(0)) if m else []
 
-        return [
-            {**jds[i], "score": s.get("score", 50), "exp": s.get("exp", 0),
-             "hard": s.get("hard", 0), "skill": s.get("skill", 0),
-             "company_score": s.get("company", 0), "fit": s.get("fit", 0),
-             "analysis": s.get("analysis", ""), "strength": s.get("strength", ""),
-             "weakness": s.get("weakness", ""), "suggestion": s.get("suggestion", "")}
-            for i, s in enumerate(scores)
-        ]
+        return self._validate_scores(scores, jds, weights)
+
+    def _validate_scores(self, scores: list, jds: list, weights: dict) -> list:
+        """校验 AI 返回的分数是否合理，异常则降级处理"""
+        results = []
+        for i, s in enumerate(scores):
+            exp = s.get("exp", 0)
+            hard = s.get("hard", 0)
+            skill = s.get("skill", 0)
+            company = s.get("company", 0)
+            fit = s.get("fit", 0)
+            score = s.get("score", 0)
+
+            # 各维度不超过满分
+            exp = min(exp, weights.get("exp", 40))
+            hard = min(hard, weights.get("hard", 25))
+            skill = min(skill, weights.get("skill", 15))
+            company = min(company, weights.get("company", 10))
+            fit = min(fit, weights.get("fit", 10))
+
+            # 各维度不低于0
+            exp = max(exp, 0); hard = max(hard, 0); skill = max(skill, 0)
+            company = max(company, 0); fit = max(fit, 0)
+
+            # 总分修正：如果 AI 给的总分和五维之和偏差过大，用五维之和
+            dim_sum = exp + hard + skill + company + fit
+            if abs(score - dim_sum) > 5:
+                score = dim_sum
+
+            # 总分裁剪
+            score = max(0, min(100, score))
+
+            results.append({
+                **jds[i],
+                "score": score, "exp": exp, "hard": hard,
+                "skill": skill, "company_score": company, "fit": fit,
+                "analysis": s.get("analysis", ""), "strength": s.get("strength", ""),
+                "weakness": s.get("weakness", ""), "suggestion": s.get("suggestion", ""),
+            })
+        return results
 
     # ===== 公司偏好分析 =====
     def analyze_preferences(self, resume: dict, jds: list) -> dict:

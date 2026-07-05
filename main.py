@@ -45,13 +45,15 @@ def get_dashscope_key():
     return state["config"].get("dashscope_key") or os.environ.get("DASHSCOPE_KEY", "")
 
 def get_engine():
-    """懒加载 MatchEngine，Key 变化时重建"""
+    """懒加载 MatchEngine，Key/URL/Model 变化时重建"""
     global engine
     key = get_ds_key()
+    url = text_api_url()
+    model = text_model()
     if not key:
         return None
-    if engine is None or engine.key != key:
-        engine = MatchEngine(key)
+    if engine is None or engine.key != key or engine.api != url or engine.model != model:
+        engine = MatchEngine(key, url, model)
     return engine
 
 def require_engine():
@@ -365,7 +367,7 @@ def batch_match():
         return jsonify({"error": "请先上传简历"}), 400
     if not state["jds"]:
         return jsonify({"error": "请先添加JD"}), 400
-    results = eng.batch_match(state["resume"], state["jds"])
+    results = eng.batch_match(state["resume"], state["jds"], state["weight"])
     preferences = eng.analyze_preferences(state["resume"], state["jds"])
     state["last_preferences"] = preferences
     # 公司分析（取前10个）

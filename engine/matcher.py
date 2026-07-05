@@ -179,12 +179,39 @@ class MatchEngine:
         except:
             return {}
 
-    # ===== 深度诊断 =====
-    def deep_diagnose(self, resume: dict, jd: dict) -> dict:
+    # ===== 深度诊断（硬性过滤+软性匹配+逐项比对） =====
+    def deep_diagnose(self, resume: dict, jd_text: str) -> dict:
         prompt = (
-            f"逐项对比简历和JD，给出诊断:\n简历:{json.dumps(resume,ensure_ascii=False)}\nJD:{json.dumps(jd,ensure_ascii=False)}\n\n"
-            "输出JSON:\n{\"overall_score\":75,\"checks\":[{\"item\":\"检查项\",\"status\":\"pass/warn/fail\",\"detail\":\"说明\",\"fix\":\"修改建议\"}],"
-            "\"optimized_resume\":\"优化后的简历文本（不编造事实，只优化表达和结构）\",\"interview_questions\":[\"预测面试问题\"]}"
+            "你是资深HR。按以下流程完成岗位匹配诊断。\n\n"
+            "【步骤1】从JD中提取各项要求，按规则分类:\n"
+            "硬性要求信号(一项不达标=该岗基本没戏): \"要求\"、\"必须\"、\"需\"、\"及以上\"、\"至少X年\"、\"熟练掌握/精通\"\n"
+            "软性偏好信号(不达标扣分但不淘汰): \"优先\"、\"加分\"、\"了解即可\"、\"有...经验优先\"、\"熟悉...更好\"\n"
+            "兜底规则: 学历+经验年限永远是硬性。执业资格证书(CPA/律师证/执业医师等)→硬性, 其他证书→软性。\n"
+            "如果一句话的主句是\"要求\"但附带\"优先\"→主句动词决定(通常是硬性)。\n\n"
+            "【步骤2】逐项比对简历，每项输出:\n"
+            "- item: 检查项名称\n"
+            "- category: \"硬性\"或\"软性\"\n"
+            "- status: \"pass\"(达标) / \"warn\"(软性不满足) / \"fail\"(硬性不达标)\n"
+            "- jd_require: JD要求什么\n"
+            "- resume_has: 简历现状\n"
+            "- suggestion: 告诉候选人差在哪、怎么补救\n"
+            "- fix: 具体的修改建议(修改简历/补充经历/降级投递)\n\n"
+            "【步骤3】汇总:\n"
+            "计分规则:\n"
+            "- 硬性不达标=0项 → 正常打分70-95 (各项软性正常加减分)\n"
+            "- 硬性不达标=1项 → 困难45-69\n"
+            "- 硬性不达标≥2项 → 不建议<45\n"
+            "给出替代建议: 如果综合评分低，建议候选人投递什么更匹配的岗位方向。\n"
+            "最后给出优化后的简历文本(不编造事实，只优化表达和结构)+预测面试问题(中英文，3-5个)。\n\n"
+            f"候选人简历:\n{json.dumps(resume, ensure_ascii=False)}\n\n"
+            f"目标岗位JD:\n{jd_text[:4000]}\n\n"
+            "输出JSON(不要markdown包裹):\n"
+            '{"jd_breakdown":{"hard":[{"item":"学历","requirement":"硕士及以上"}],"soft":[{"item":"B端经验","requirement":"有B端经验优先"}]},'
+            '"checks":[{"item":"学历","category":"硬性","status":"fail","jd_require":"硕士及以上","resume_has":"本科",'
+            '"suggestion":"该岗硬性要求硕士。如有硕士在读经历请补充；否则该岗过不了简历关。","fix":"建议查看同公司本科可投的同类岗位"}],'
+            '"hard_fail_count":0,"verdict":"可冲","overall_score":0,'
+            '"alternative_suggestions":[],'
+            '"optimized_resume":"优化后的简历文本","interview_questions":["面试问题1"]}'
         )
         resp = self.call(prompt, 4000)
         m = re.search(r'\{[\s\S]*\}', resp)

@@ -387,8 +387,7 @@ def diagnose():
     jd_text = data.get("jd_text", "").strip()
     if not state["resume"] or not jd_text:
         return jsonify({"error": "需要简历和JD"}), 400
-    jd = eng.parse_jd(jd_text)
-    result = eng.deep_diagnose(state["resume"], jd)
+    result = eng.deep_diagnose(state["resume"], jd_text)
     return jsonify({"ok": True, "diagnosis": result})
 
 # ===== 简历优化 =====

@@ -691,13 +691,74 @@ async function startDiagnose() {
   let d = await r.json();
   if (!d.ok) { el.innerHTML='<p style="color:var(--red)">'+d.error+'</p>'; return; }
   let diag = d.diagnosis;
-  let html = '<div class="card"><div class="card-title">综合评分 <span style="font-size:28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-left:8px">'+diag.overall_score+'</span></div>';
-  (diag.checks||[]).forEach(c => {
-    html += '<div class="check-row"><div class="check-dot '+c.status+'"></div><div><b>'+esc(c.item)+'</b>: '+esc(c.detail)+(c.fix?' <span style="color:var(--accent);font-weight:500">→ '+esc(c.fix)+'</span>':'')+'</div></div>';
+
+  // 定级颜色
+  let verdictColors = {"可冲":"#10b981","困难":"#f59e0b","不建议":"#ef4444"};
+  let verdictIcon = {"可冲":"✅","困难":"⚠️","不建议":"🚫"};
+  let vc = verdictColors[diag.verdict]||"#6366f1";
+  let vi = verdictIcon[diag.verdict]||"";
+
+  // 顶部: 综合评分 + 定级
+  let html = '<div class="card" style="border:2px solid '+vc+'">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">';
+  html += '<div><div class="card-title">综合评分 <span style="font-size:36px;font-weight:700;color:'+vc+'">'+diag.overall_score+'</span></div>';
+  html += '<div style="font-size:13px;color:var(--muted);margin-top:4px">'+vi+' '+esc(diag.verdict||"")+' · 硬性不达标: '+diag.hard_fail_count+'项</div></div>';
+  html += '</div></div>';
+
+  // JD 拆解
+  if (diag.jd_breakdown) {
+    html += '<div class="card"><div class="card-title">📋 JD 要求拆解</div>';
+    if (diag.jd_breakdown.hard && diag.jd_breakdown.hard.length) {
+      html += '<div style="margin-bottom:8px"><span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fef2f2;color:#dc2626;font-weight:600">硬性</span></div>';
+      diag.jd_breakdown.hard.forEach(function(h) {
+        html += '<div class="check-row"><div class="check-dot fail"></div><div><b>'+esc(h.item)+'</b>: '+esc(h.requirement)+'</div></div>';
+      });
+    }
+    if (diag.jd_breakdown.soft && diag.jd_breakdown.soft.length) {
+      html += '<div style="margin:12px 0 8px"><span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fef3c7;color:#d97706;font-weight:600">软性</span></div>';
+      diag.jd_breakdown.soft.forEach(function(s) {
+        html += '<div class="check-row"><div class="check-dot warn"></div><div><b>'+esc(s.item)+'</b>: '+esc(s.requirement)+'</div></div>';
+      });
+    }
+    html += '</div>';
+  }
+
+  // 逐项比对
+  html += '<div class="card"><div class="card-title">🔍 逐项比对</div>';
+  (diag.checks||[]).forEach(function(c) {
+    let catBadge = c.category==='硬性' ? '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#fef2f2;color:#dc2626;margin-left:4px">硬性</span>' : '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#fef3c7;color:#d97706;margin-left:4px">软性</span>';
+    html += '<div class="check-row">';
+    html += '<div class="check-dot '+c.status+'"></div>';
+    html += '<div style="flex:1">';
+    html += '<div><b>'+esc(c.item)+'</b>'+catBadge+'</div>';
+    html += '<div style="font-size:11px;margin:2px 0">JD要求: '+esc(c.jd_require||"")+' → 简历现状: '+esc(c.resume_has||"")+'</div>';
+    if (c.suggestion) html += '<div style="font-size:11px;color:var(--accent);font-weight:500">💡 '+esc(c.suggestion)+'</div>';
+    if (c.fix) html += '<div style="font-size:11px;color:var(--green)">✏️ '+esc(c.fix)+'</div>';
+    html += '</div></div>';
   });
   html += '</div>';
+
+  // 替代建议(低分时)
+  if (diag.alternative_suggestions && diag.alternative_suggestions.length) {
+    html += '<div class="card" style="border:1px solid #f59e0b;background:#fffbeb"><div class="card-title">🔄 替代投递建议</div>';
+    diag.alternative_suggestions.forEach(function(a) {
+      html += '<div style="font-size:12px;padding:3px 0">→ '+esc(a)+'</div>';
+    });
+    html += '</div>';
+  }
+
+  // 优化简历
   if (diag.optimized_resume) html += '<div class="card"><div class="card-title">✨ 优化后的简历</div><div class="optimized-resume">'+esc(diag.optimized_resume)+'</div></div>';
-  if (diag.interview_questions) html += '<div class="card"><div class="card-title">🎤 预测面试问题</div>'+diag.interview_questions.map((q,i)=>"<div class='check-row'><div class='check-dot pass'></div><div>"+(i+1)+". "+esc(q)+"</div></div>").join("")+'</div>';
+
+  // 面试问题
+  if (diag.interview_questions && diag.interview_questions.length) {
+    html += '<div class="card"><div class="card-title">🎤 预测面试问题</div>';
+    diag.interview_questions.forEach(function(q,i) {
+      html += '<div class="check-row"><div class="check-dot pass"></div><div>'+(i+1)+'. '+esc(q)+'</div></div>';
+    });
+    html += '</div>';
+  }
+
   el.innerHTML = html;
 }
 

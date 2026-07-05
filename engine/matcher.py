@@ -83,9 +83,10 @@ class MatchEngine:
             f"重要: 每个维度的分数不得超过该维度的满分({w['exp']}/{w['hard']}/{w['skill']}/{w['company']}/{w['fit']})。\n"
             "学科分七类:商科/理科/工科/文科/医科/艺术/其他。同大类正常打分,跨大类≤10。\n"
             "技能是加分项不是及格线。\n"
-            "输出分析+优点+不足+建议。\n"
+            "每个岗位输出分析+优点+不足+建议。\n"
+            "⚠️ 必须拉开差距: 高匹配度岗位 80-95分, 中匹配度 60-79分, 低匹配度 30-59分。不要所有岗位给出相近分数。\n"
             f"候选人:\n{profile}\n\n{jd_text}\n\n"
-            '输出JSON:[{"index":1,"score":75,"exp":30,"hard":20,"skill":10,"company":8,"fit":7,"analysis":"一句话","strength":"优点","weakness":"不足","suggestion":"建议"}]'
+            '输出JSON:[{"index":1,"score":0,"exp":0,"hard":0,"skill":0,"company":0,"fit":0,"analysis":"一句话","strength":"优点","weakness":"不足","suggestion":"建议"}]'
         )
         resp = self.call(prompt, 4000)
         m = re.search(r'\[[\s\S]*\]', resp)
